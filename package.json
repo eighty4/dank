@@ -1,0 +1,19 @@
+{
+    "name": "@eighty4/dank",
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+        "fmt": "prettier --write .",
+        "fmtcheck": "perttier --check .",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "esbuild": "^0.25.10",
+        "parse5": "^8.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^24.5.2",
+        "prettier": "^3.6.2",
+        "typescript": "^5.9.2"
+    }
+}
