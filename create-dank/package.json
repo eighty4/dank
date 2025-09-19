@@ -1,0 +1,19 @@
+{
+    "name": "create-dank",
+    "version": "0.0.1-0",
+    "type": "module",
+    "bin": "./lib_js/create.js",
+    "devDependencies": {
+        "prettier": "^3.6.2",
+        "typescript": "^5.9.2"
+    },
+    "scripts": {
+        "build": "tsc",
+        "fmt": "prettier --write .",
+        "fmtcheck": "perttier --check .",
+        "typecheck": "tsc --noEmit"
+    },
+    "files": [
+        "lib_js/create.js"
+    ]
+}

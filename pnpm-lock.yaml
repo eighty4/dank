@@ -25,6 +25,15 @@ importers:
         specifier: ^5.9.2
         version: 5.9.2
 
+  create-dank:
+    devDependencies:
+      prettier:
+        specifier: ^3.6.2
+        version: 3.6.2
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.2
+
 packages:
 
   '@esbuild/aix-ppc64@0.25.10':

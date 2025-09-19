@@ -1,0 +1,25 @@
+{
+    "compilerOptions": {
+        "outDir": "./lib_js",
+        "rootDir": "./",
+        "composite": false,
+        "declaration": false,
+
+        "target": "ESNext",
+        "module": "NodeNext",
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+
+        "allowImportingTsExtensions": true,
+        "rewriteRelativeImportExtensions": true,
+
+        /* Linting */
+        "noFallthroughCasesInSwitch": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "strict": true,
+        "verbatimModuleSyntax": true
+    },
+    "include": ["create.ts"],
+    "exclude": ["node_modules", "lib_js"]
+}
