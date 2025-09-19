@@ -2,3 +2,4 @@ node_modules
 tsconfig.tsbuildinfo
 
 lib_js
+lib_types

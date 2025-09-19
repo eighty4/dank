@@ -5,10 +5,7 @@ import esbuild, {
     type Message,
     type Metafile,
 } from 'esbuild'
-import {
-    defineSidelinesForEsbuildWatch,
-    type DefineSidelinesGlobal,
-} from './define.ts'
+import type { DefineDankGlobal } from './define.ts'
 import { willMinify } from './flags.ts'
 
 const jsBuildOptions: BuildOptions & { metafile: true; write: true } = {
@@ -22,27 +19,18 @@ const jsBuildOptions: BuildOptions & { metafile: true; write: true } = {
 }
 
 const webpageBuildOptions: BuildOptions & { metafile: true; write: true } = {
-    assetNames: 'lib/assets/[name]-[hash]',
-    // chunkNames: 'lib/sidelines/[name]-[hash]',
-    external: ['monaco-editor'], //, 'react', 'react-dom'],
+    assetNames: 'assets/[name]-[hash]',
     format: 'esm',
-    // loader: {
-    //     '.ttf': 'file',
-    // },
-    ...jsBuildOptions,
-}
-
-const workerBuildOptions: BuildOptions & { metafile: true; write: true } = {
-    format: 'iife',
     ...jsBuildOptions,
 }
 
 export async function esbuildDevContext(
-    entryPoints: BuildOptions['entryPoints'],
+    define: DefineDankGlobal,
+    entryPoints: Array<{ in: string; out: string }>,
     outdir: string,
 ): Promise<BuildContext> {
     return await esbuild.context({
-        define: defineSidelinesForEsbuildWatch(),
+        define,
         entryNames: '[dir]/[name]',
         entryPoints,
         outdir,
@@ -51,14 +39,14 @@ export async function esbuildDevContext(
 }
 
 export async function esbuildWebpages(
-    define: DefineSidelinesGlobal,
+    define: DefineDankGlobal,
     entryPoints: Array<{ in: string; out: string }>,
     outdir: string,
 ): Promise<Metafile> {
     const buildResult = await esbuild.build({
         define,
         entryNames: '[dir]/[name]-[hash]',
-        entryPoints,
+        entryPoints: removeEntryPointOutExt(entryPoints),
         outdir,
         ...webpageBuildOptions,
     })
@@ -66,19 +54,15 @@ export async function esbuildWebpages(
     return buildResult.metafile
 }
 
-export async function esbuildWorkers(
-    entryPoints: Array<string>,
-    entryNames: string,
-    outdir: string,
-): Promise<Metafile> {
-    const buildResult = await esbuild.build({
-        entryPoints,
-        entryNames,
-        outdir,
-        ...workerBuildOptions,
+function removeEntryPointOutExt(
+    entryPoints: Array<{ in: string; out: string }>,
+) {
+    return entryPoints.map(entryPoint => {
+        return {
+            in: entryPoint.in,
+            out: entryPoint.out.replace(/\.(tsx?|jsx?|css)$/, ''),
+        }
     })
-    esbuildResultChecks(buildResult)
-    return buildResult.metafile
 }
 
 function esbuildResultChecks(buildResult: BuildResult) {

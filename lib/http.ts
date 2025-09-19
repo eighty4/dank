@@ -7,12 +7,6 @@ import {
     type ServerResponse,
 } from 'node:http'
 import { extname, join as fsJoin } from 'node:path'
-import {
-    createRoutes,
-    hasServerEnvValues,
-    type HttpMethod,
-    type RequestHandler,
-} from '@sidelines/server/routes'
 import { isProductionBuild } from './flags.ts'
 
 export type FrontendFetcher = (
@@ -21,23 +15,27 @@ export type FrontendFetcher = (
     res: ServerResponse,
 ) => void
 
-export function createEsbuildFilesFetcher(
-    esbuildPort: number,
-): FrontendFetcher {
-    return (url: URL, _headers: Headers, res: ServerResponse) => {
-        fetch(`http://127.0.0.1:${esbuildPort}${url.pathname}`).then(
-            fetchResponse => {
-                res.writeHead(
-                    fetchResponse.status,
-                    convertHeadersFromFetch(fetchResponse.headers),
-                )
-                fetchResponse.bytes().then(data => res.end(data))
-            },
-        )
-    }
+export function createWebServer(
+    port: number,
+    frontendFetcher: FrontendFetcher,
+): ReturnType<typeof createServer> {
+    const serverAddress = 'http://localhost:' + port
+    return createServer((req: IncomingMessage, res: ServerResponse) => {
+        if (!req.url || !req.method) {
+            res.end()
+        } else {
+            const url = new URL(serverAddress + req.url)
+            if (req.method !== 'GET') {
+                res.writeHead(405)
+                res.end()
+            } else {
+                frontendFetcher(url, convertHeadersToFetch(req.headers), res)
+            }
+        }
+    })
 }
 
-export function createFrontendFilesFetcher(
+export function createBuiltDistFilesFetcher(
     dir: string,
     files: Set<string>,
 ): FrontendFetcher {
@@ -65,6 +63,19 @@ export function createFrontendFilesFetcher(
     }
 }
 
+export function createLocalProxyFilesFetcher(port: number): FrontendFetcher {
+    const proxyAddress = 'http://127.0.0.1:' + port
+    return (url: URL, _headers: Headers, res: ServerResponse) => {
+        fetch(proxyAddress + url.pathname).then(fetchResponse => {
+            res.writeHead(
+                fetchResponse.status,
+                convertHeadersFromFetch(fetchResponse.headers),
+            )
+            fetchResponse.bytes().then(data => res.end(data))
+        })
+    }
+}
+
 function resolveMimeType(url: URL): string {
     switch (extname(url.pathname)) {
         case '':
@@ -83,75 +94,6 @@ function resolveMimeType(url: URL): string {
             console.warn('? mime type for', url.pathname)
             if (!isProductionBuild()) process.exit(1)
             return 'application/octet-stream'
-    }
-}
-
-export function createWebServer(
-    frontendFetcher: FrontendFetcher,
-): ReturnType<typeof createServer> {
-    if (!hasServerEnvValues(process.env)) {
-        throw Error('missing env vars for web server')
-    }
-    const routes = createRoutes(process.env)
-    return createServer((req: IncomingMessage, res: ServerResponse) => {
-        if (!req.url || !req.method) {
-            res.end()
-        } else {
-            const url = new URL(`${process.env.WEBAPP_ADDRESS}${req.url}`)
-            if (!url.pathname.startsWith('/assets/sidelines/icons/'))
-                console.log(req.method, url.pathname)
-            if (routes[url.pathname]) {
-                const route = routes[url.pathname][req.method as HttpMethod]
-                if (!route) {
-                    res.writeHead(405)
-                    res.end()
-                } else {
-                    invokeRoute(url, req, res, route)
-                }
-            } else if (req.method !== 'GET') {
-                res.writeHead(405)
-                res.end()
-            } else {
-                frontendFetcher(url, convertHeadersToFetch(req.headers), res)
-            }
-        }
-    })
-}
-
-function invokeRoute(
-    url: URL,
-    req: IncomingMessage,
-    res: ServerResponse,
-    route: RequestHandler,
-) {
-    const result = route(
-        new Request(url, {
-            method: req.method,
-            headers: convertHeadersToFetch(req.headers),
-        }),
-    )
-    if (result instanceof Response) {
-        sendFetchResponse(result, res)
-    } else if (result instanceof Promise) {
-        result.then(fetchResponse => sendFetchResponse(fetchResponse, res))
-    } else {
-        console.error('route did not return a Response or Promise<Response>')
-        res.end()
-    }
-}
-
-function sendFetchResponse(
-    fetchResponse: Response,
-    serverResponse: ServerResponse,
-) {
-    serverResponse.writeHead(
-        fetchResponse.status,
-        convertHeadersFromFetch(fetchResponse.headers),
-    )
-    if (fetchResponse.body) {
-        fetchResponse.text().then(data => serverResponse.end(data))
-    } else {
-        serverResponse.end()
     }
 }
 

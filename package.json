@@ -2,9 +2,18 @@
     "name": "@eighty4/dank",
     "version": "0.0.0",
     "type": "module",
+    "bin": "./lib_js/bin.js",
+    "exports": {
+        ".": {
+            "node": "./lib_js/dank.js",
+            "types": "./lib_types/dank.d.ts",
+            "import": "./lib/dank.ts"
+        }
+    },
     "scripts": {
+        "build": "tsc && tsc -p tsconfig.exports.json",
         "fmt": "prettier --write .",
-        "fmtcheck": "perttier --check .",
+        "fmtcheck": "prettier --check .",
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
@@ -15,5 +24,10 @@
         "@types/node": "^24.5.2",
         "prettier": "^3.6.2",
         "typescript": "^5.9.2"
-    }
+    },
+    "files": [
+        "lib/*.ts",
+        "lib_js/*.js",
+        "lib_types/*.d.ts"
+    ]
 }

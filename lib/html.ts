@@ -31,7 +31,13 @@ export class HtmlEntrypoint {
         urlPath: string,
         fsPath: string,
     ): Promise<HtmlEntrypoint> {
-        const html = await readFile(fsPath, 'utf-8')
+        let html: string
+        try {
+            html = await readFile(fsPath, 'utf-8')
+        } catch (e) {
+            console.log(`\u001b[31merror:\u001b[0m`, fsPath, 'does not exist')
+            process.exit(1)
+        }
         return new HtmlEntrypoint(urlPath, html, fsPath)
     }
 
@@ -163,15 +169,12 @@ export class HtmlEntrypoint {
 
     #addScript(type: ImportedScript['type'], href: string, elem: Element) {
         const inPath = join(dirname(this.#fsPath), href)
-        const outPath =
-            'lib/sidelines/' + inPath.substring(0, inPath.lastIndexOf('.'))
-
         this.#scripts.push({
             type,
             href,
             elem,
             in: inPath,
-            out: outPath,
+            out: inPath.replace(/^pages\//, ''),
         })
     }
 }

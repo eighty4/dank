@@ -1,44 +1,43 @@
 import { copyFile, mkdir, readdir, stat } from 'node:fs/promises'
-import { join as fsJoin } from 'node:path'
+import { join } from 'node:path'
 
-const cached: Array<string> = ['/icons/logo.svg']
-
-// written to /assets/sidelines in outRoot
 export async function copyAssets(
     outRoot: string,
-): Promise<{ all: Array<string>; cached: Array<string> }> {
-    outRoot = fsJoin(outRoot, 'assets', 'sidelines')
-    await mkdir(outRoot, { recursive: true })
-    const copied = (await recursiveCopyAssets(outRoot, '')).map(
-        p => '/assets/sidelines' + p,
-    )
-    return {
-        all: copied,
-        cached: copied.filter(p => cached.includes(p)),
+): Promise<Array<string> | null> {
+    try {
+        const stats = await stat('public')
+        if (stats.isDirectory()) {
+            await mkdir(outRoot, { recursive: true })
+            return await recursiveCopyAssets(outRoot)
+        } else {
+            throw Error('./public cannot be a file')
+        }
+    } catch (e) {
+        return null
     }
 }
 
 async function recursiveCopyAssets(
     outRoot: string,
-    dir: string,
+    dir: string = '',
 ): Promise<Array<string>> {
     const copied: Array<string> = []
-    const to = fsJoin(outRoot, dir)
+    const to = join(outRoot, dir)
     let madeDir = dir === ''
-    for (const p of await readdir(fsJoin('public', dir))) {
+    for (const p of await readdir(join('public', dir))) {
         try {
-            const stats = await stat(fsJoin('public', dir, p))
+            const stats = await stat(join('public', dir, p))
             if (stats.isDirectory()) {
                 copied.push(
-                    ...(await recursiveCopyAssets(outRoot, fsJoin(dir, p))),
+                    ...(await recursiveCopyAssets(outRoot, join(dir, p))),
                 )
             } else {
                 if (!madeDir) {
-                    await mkdir(fsJoin(outRoot, dir))
+                    await mkdir(join(outRoot, dir))
                     madeDir = true
                 }
-                await copyFile(fsJoin('public', dir, p), fsJoin(to, p))
-                copied.push('/' + fsJoin(dir, p).replaceAll('\\', '/'))
+                await copyFile(join('public', dir, p), join(to, p))
+                copied.push('/' + join(dir, p).replaceAll('\\', '/'))
             }
         } catch (e) {
             console.error('stat error', e)

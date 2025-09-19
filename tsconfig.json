@@ -1,8 +1,12 @@
 {
     "compilerOptions": {
+        "outDir": "lib_js",
+        "rootDir": "lib",
+
         "target": "ESNext",
         "module": "NodeNext",
-        "composite": true,
+        "composite": false,
+        "declaration": false,
         "forceConsistentCasingInFileNames": true,
         "skipLibCheck": true,
 
@@ -15,5 +19,7 @@
         "noUnusedParameters": true,
         "strict": true,
         "verbatimModuleSyntax": true
-    }
+    },
+    "include": ["lib/*.ts"],
+    "exclude": ["node_modules"]
 }

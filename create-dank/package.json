@@ -1,6 +1,6 @@
 {
     "name": "create-dank",
-    "version": "0.0.1-1",
+    "version": "0.0.1-2",
     "type": "module",
     "bin": "./lib_js/create.js",
     "devDependencies": {
@@ -9,8 +9,8 @@
     },
     "scripts": {
         "build": "tsc",
-        "fmt": "prettier --write .",
-        "fmtcheck": "perttier --check .",
+        "fmt": "prettier --write create.ts",
+        "fmtcheck": "perttier --check create.ts",
         "typecheck": "tsc --noEmit"
     },
     "files": [
