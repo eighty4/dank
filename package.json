@@ -1,6 +1,6 @@
 {
     "name": "@eighty4/dank",
-    "version": "0.0.1-0",
+    "version": "0.0.1-1",
     "type": "module",
     "packageManager": "pnpm@10.17.0",
     "bin": "./lib_js/bin.js",
