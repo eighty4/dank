@@ -53,8 +53,14 @@ if [ "$0" = ".git/hooks/pre-push" ]; then
     fi
 fi
 
-echo '\n*** typecheck ***'
+echo '\n*** @eighty4/dank: tsc ***'
 pnpm typecheck
 
-echo '\n*** fmtcheck ***'
+echo '\n*** @eighty4/dank: dank build ***'
+pnpm build
+
+echo '\n*** create-dank: tsc ***'
+(cd create-dank && pnpm build)
+
+echo '\n*** prettier --check ***'
 pnpm fmtcheck
