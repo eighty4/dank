@@ -1,6 +1,6 @@
 {
     "name": "create-dank",
-    "version": "0.0.1-2",
+    "version": "0.0.1-7",
     "type": "module",
     "bin": "./lib_js/create.js",
     "devDependencies": {

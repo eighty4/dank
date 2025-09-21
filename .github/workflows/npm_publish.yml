@@ -1,11 +1,12 @@
 name: Publish to npm
-run-name: ${{ format('Publish {0} bump {1}', inputs.semver-bump, inputs.dry-run && '(dry run)' || '') }}
+run-name: ${{ format('Publish {0} {1} bump {2}', inputs.package, inputs.semver-bump, inputs.dry-run && '(dry run)' || '') }}
 
 on:
   workflow_dispatch:
     inputs:
       package:
         description: NPM package to publish
+        required: true
         type: choice
         options:
           - '@eighty4/dank'
@@ -24,7 +25,7 @@ on:
         required: false
         type: boolean
 
-concurrency: publish
+concurrency: ${{ inputs.dry-run && format('publish-dry-run-{0}', github.run_number) || 'publish'}}
 
 jobs:
   check-build-params:
@@ -37,13 +38,14 @@ jobs:
       - name: changelog entries
         if: ${{ inputs.semver-bump != 'prerelease' }}
         run: npx -y @eighty4/changelog@latest check
-      - name: 'work_dir @eighty4/dank'
+      - name: '@eighty4/dank to work_dir'
         if: ${{ inputs.package == '@eighty4/dank' }}
         run: echo "work_dir=./" > wd
-      - name: work_dir create-dank
+      - name: create-dank work_dir
         if: ${{ inputs.package == 'create-dank' }}
         run: echo "work_dir=./create-dank" > wd
-      - id: work_dir
+      - name: work_dir to outputs
+        id: work_dir
         run: cat wd >> "$GITHUB_OUTPUT"
     outputs:
       work_dir: ${{ steps.work_dir.outputs.work_dir }}
@@ -65,21 +67,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - if: ${{ inputs.dry-run }}
+      - name: checkout -b (dry-run)
+        if: ${{ inputs.dry-run }}
         run: git checkout -b "publish-dry-run-${{ github.run_number }}"
-      - id: bump
+      - name: version bump
+        id: bump
         env:
           TAG_PREFIX: ${{ inputs.package == 'create-dank' && 'create-dank-' || '' }}
         run: |
           GIT_TAG=$(npm version ${{ inputs.semver-bump }} --no-git-tag-version)
           echo "version=${GIT_TAG:1}" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG_PREFIX$GIT_TAG" >> "$GITHUB_OUTPUT"
-      - if: inputs.semver-bump != 'prerelease'
+      - name: changelog rollover
+        if: inputs.semver-bump != 'prerelease'
         env:
           VERSION: ${{ steps.bump.outputs.version }}
         run: npx -y @eighty4/changelog@latest rollover "v$VERSION"
-      - name: ctp
-        id: push
+      - name: commit & tag
         env:
           GIT_TAG: ${{ steps.bump.outputs.tag }}
           NPM_TAG: ${{ inputs.semver-bump == 'prerelease' && 'next' || 'latest' }}
@@ -133,6 +137,8 @@ jobs:
     defaults:
       run:
         working-directory: ${{ needs.check-build-params.outputs.work_dir }}
+    env:
+      NPM_TAG: ${{ inputs.semver-bump == 'prerelease' && 'next' || 'latest' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -141,19 +147,30 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - id: gen
+      - name: publish registry
         env:
-          CHANGELOG_TAG: ${{ inputs.semver-bump == 'prerelease' && 'Unreleased' || needs.create-git-tag.outputs.tag }}
           GIT_TAG: ${{ needs.create-git-tag.outputs.tag }}
-          NPM_TAG: ${{ inputs.semver-bump == 'prerelease' && 'next' || 'latest' }}
         run: |
           PKG_NAME=$(cat package.json | jq -r ".name")
           VERSION=${GIT_TAG:1}
           echo "#### Published to npm as [$PKG_NAME](https://www.npmjs.com/package/$PKG_NAME/v/$VERSION)" >> release_notes.md
           echo >> release_notes.md
-          echo "\`\`\`npm i -g $PKG_NAME@$NPM_TAG\`\`\`" >> release_notes.md
-          echo >> release_notes.md
-
+      - name: '@eighty4/dank instructions'
+        if: ${{ inputs.package == '@eighty4/dank' }}
+        run: echo "\`\`\`npm i @eighty4/dank@$NPM_TAG\`\`\`" >> release_notes.md
+      - name: 'create-dank prerelease instructions'
+        if: ${{ inputs.package == 'create-dank' && inputs.semver-bump == 'prerelease' }}
+        env:
+          VERSION: ${{ needs.create-git-tag.outputs.version }}
+        run: echo "\`\`\`npm create dank@$VERSION\`\`\`" >> release_notes.md
+      - name: 'create-dank instructions'
+        if: ${{ inputs.package == 'create-dank' && inputs.semver-bump != 'prerelease' }}
+        run: echo "\`\`\`npm create dank@latest\`\`\`" >> release_notes.md
+      - name: changelog notes
+        id: out
+        env:
+          CHANGELOG_TAG: ${{ inputs.semver-bump == 'prerelease' && 'Unreleased' || needs.create-git-tag.outputs.tag }}
+        run: |
           echo "## Release notes" >> release_notes.md
           echo >> release_notes.md
           npx -y @eighty4/changelog@latest get "$CHANGELOG_TAG" >> release_notes.md
@@ -161,8 +178,10 @@ jobs:
 
           RELEASE_NOTES=$(cat release_notes.md | base64 -w 0)
           echo "notes=$RELEASE_NOTES" >> "$GITHUB_OUTPUT"
+      - if: ${{ inputs.dry-run }}
+        run: cat release_notes.md
     outputs:
-      notes: ${{ steps.gen.outputs.notes }}
+      notes: ${{ steps.out.outputs.notes }}
 
   create-gh-release:
     uses: ./.github/workflows/gh_release.yml
@@ -171,10 +190,10 @@ jobs:
       contents: write
     secrets: inherit
     with:
-      title: '${{ needs.create-git-tag.outputs.tag }}'
+      title: ${{ inputs.package == '@eighty4/dank' && needs.create-git-tag.outputs.tag || format('{0} v{1}', inputs.package, needs.create-git-tag.outputs.version) }}
       release_notes: ${{ needs.create-release-notes.outputs.notes }}
       prerelease: ${{ inputs.semver-bump == 'prerelease' && 'true' || 'false' }}
-      latest: ${{ inputs.semver-bump == 'prerelease' && 'false' || 'true' }}
+      latest: ${{ inputs.package == 'create-dank' && 'false' || inputs.semver-bump == 'prerelease' && 'false' || 'true' }}
       tag: ${{ needs.create-git-tag.outputs.tag }}
 
   cleanup-dry-run:
