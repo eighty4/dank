@@ -138,17 +138,18 @@ h1 {
 // todo resolve bun, npm or pnpm for getting started instructions
 console.log(
     green('✔'),
-    'created your new',
+    'created your',
     bold('dank'),
-    'project in',
+    'new project in',
     bold(/^(\.|\/)/.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`),
 )
 console.log()
-console.log('        cd', opts.outDir)
+console.log('        cd', /^\.?\//.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`)
 console.log('        npm i')
 console.log('        npm run dev')
 console.log()
-console.log('  Enjoy!')
+console.log('    Enjoy!')
+console.log()
 
 async function getLatestDankVersion() {
     try {
