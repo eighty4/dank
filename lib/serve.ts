@@ -13,6 +13,7 @@ import {
     type FrontendFetcher,
 } from './http.ts'
 import { copyAssets } from './public.ts'
+import { startDevServices } from './services.ts'
 
 const isPreview = isPreviewBuild()
 
@@ -37,6 +38,7 @@ export async function serveWebsite(c: DankConfig): Promise<never> {
         isPreview ? 'preview' : 'dev server',
         `is live at http://127.0.0.1:${PORT}`,
     )
+    startDevServices(c)
     return new Promise(() => {})
 }
 
@@ -72,8 +74,6 @@ async function startEsbuildWatch(c: DankConfig): Promise<{ port: number }> {
             return html
         }),
     )
-
-    console.log(entryPoints)
 
     const ctx = await esbuildDevContext(
         createGlobalDefinitions(),
