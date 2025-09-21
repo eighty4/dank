@@ -13,7 +13,10 @@ if (process.argv.some(arg => arg === '-h' || arg === '--help')) {
 
 function printHelp(e?: string): never {
     if (e) printError(e)
-    console.log('create-dank --out-dir OUT_DIR')
+    console.log('create-dank [OPTIONS...] --out-dir OUT_DIR')
+    console.log()
+    console.log('OPTIONS:')
+    console.log('   --package-name     Specify name for package.json')
     process.exit(1)
 }
 
@@ -37,6 +40,7 @@ const args = (function collectProgramArgs(): Array<string> {
 
 type CreateDankOpts = {
     outDir: string
+    packageName?: string
 }
 
 const opts: CreateDankOpts = (function parseCreateOpts() {
@@ -45,10 +49,16 @@ const opts: CreateDankOpts = (function parseCreateOpts() {
     while ((shifted = args.shift())) {
         switch (shifted) {
             case '--out-dir':
-                if (typeof (shifted = args.shift()) === 'undefined') {
+                if (typeof (shifted = args.shift()) === 'undefined' || shifted.startsWith('--')) {
                     printHelp('--out-dir value is missing')
                 }
                 result.outDir = shifted
+                break
+            case '--package-name':
+                if (typeof (shifted = args.shift()) === 'undefined' || shifted.startsWith('--')) {
+                    printHelp('--package-name value is missing')
+                }
+                result.packageName = shifted
                 break
         }
     }
@@ -75,7 +85,7 @@ await Promise.all([
         join(opts.outDir, 'package.json'),
         `\
 {
-    "name": "dank-n-eggs",
+    "name": "${opts.packageName || 'dank-n-eggs'}",
     "version": "0.0.0",
     "type": "module",
     "scripts": {
