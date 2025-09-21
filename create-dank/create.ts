@@ -3,6 +3,20 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
+if (process.argv.some(arg => arg === '--debug-args')) {
+    console.log(process.argv)
+}
+
+if (process.argv.some(arg => arg === '-h' || arg === '--help')) {
+    printHelp()
+}
+
+function printHelp(e?: string): never {
+    if (e) printError(e)
+    console.log('create-dank --out-dir OUT_DIR')
+    process.exit(1)
+}
+
 const args = (function collectProgramArgs(): Array<string> {
     const programNames: Array<string> = [
         // bunx / bun create / npm create
@@ -41,13 +55,12 @@ const opts: CreateDankOpts = (function parseCreateOpts() {
     if (!result.outDir) {
         printHelp('--out-dir is required')
     }
-    if (process.env.NODE_ENV !== 'production') console.log('opts', result)
     return result as CreateDankOpts
 })()
 
 try {
     await mkdir(opts.outDir)
-} catch (e) {
+} catch {
     errorExit(opts.outDir + ' already exists')
 }
 
@@ -128,7 +141,7 @@ console.log(
     'created your new',
     bold('dank'),
     'project in',
-    bold(opts.outDir),
+    bold(/^(\.|\/)/.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`),
 )
 console.log()
 console.log('        cd', opts.outDir)
@@ -148,11 +161,6 @@ async function getLatestDankVersion() {
         }
     } catch (error) {}
     return '0.0.0'
-}
-
-function printHelp(e?: string): never {
-    if (e) printError(e)
-    process.exit(1)
 }
 
 function printError(e: string | Error) {
