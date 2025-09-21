@@ -138,7 +138,10 @@ export default defineConfig({
 }
 
 h1 {
+    color: #111;
     font-family: monospace;
+    font-size: 1.5rem;
+    margin-top: calc(50vh - 1rem);
     text-align: center;
 }
 `,
