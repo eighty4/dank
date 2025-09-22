@@ -85,14 +85,13 @@ jobs:
         run: npx -y @eighty4/changelog@latest rollover "v$VERSION"
       - name: commit & tag
         env:
-          GIT_TAG: ${{ steps.bump.outputs.tag }}
           NPM_TAG: ${{ inputs.semver-bump == 'prerelease' && 'next' || 'latest' }}
         run: |
           git config --global user.name "Adam McKee"
           git config --global user.email "adam.be.g84d@gmail.com"
           git add package.json CHANGELOG.md
-          git commit -m "publishing $GIT_TAG as @$NPM_TAG"
-          git tag $GIT_TAG
+          git commit -m "publishing ${{ inputs.package }} v${{ steps.bump.outputs.version }} as @$NPM_TAG"
+          git tag ${{ steps.bump.outputs.tag }}
       - name: git push
         if: ${{ !inputs.dry-run }}
         run: git push --atomic origin main ${{ steps.bump.outputs.tag }}
