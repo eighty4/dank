@@ -1,5 +1,5 @@
-import { mkdir, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile, rm } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { buildWebsite } from './build.ts'
 import type { DankConfig } from './dank.ts'
 import { createGlobalDefinitions } from './define.ts'
@@ -47,6 +47,11 @@ async function startEsbuildWatch(c: DankConfig): Promise<{ port: number }> {
     await mkdir(watchDir, { recursive: true })
     await copyAssets(watchDir)
 
+    const clientJS = await readFile(
+        resolve(import.meta.dirname, join('..', 'client', 'esbuild.js')),
+        'utf-8',
+    )
+
     const entryPointUrls: Set<string> = new Set()
     const entryPoints: Array<{ in: string; out: string }> = []
 
@@ -70,6 +75,7 @@ async function startEsbuildWatch(c: DankConfig): Promise<{ port: number }> {
                     })
                 })
             html.rewriteHrefs()
+            html.appendScript(clientJS)
             await html.writeTo(watchDir)
             return html
         }),

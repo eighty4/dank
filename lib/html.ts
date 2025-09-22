@@ -85,6 +85,19 @@ export class HtmlEntrypoint {
         }
     }
 
+    appendScript(clientJS: string) {
+        const scriptNode = parseFragment(
+            `<script type="module">${clientJS}</script>`,
+        ).childNodes[0]
+        const htmlNode = this.#document.childNodes.find(
+            node => node.nodeName === 'html',
+        ) as ParentNode
+        const headNode = htmlNode.childNodes.find(
+            node => node.nodeName === 'head',
+        ) as ParentNode | undefined
+        defaultTreeAdapter.appendChild(headNode || htmlNode, scriptNode)
+    }
+
     async writeTo(buildDir: string): Promise<void> {
         await writeFile(
             join(buildDir, this.#url, 'index.html'),
