@@ -3,9 +3,25 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-if (process.argv.some(arg => arg === '--debug-args')) {
-    console.log(process.argv)
-}
+const runtime: 'bun' | 'node' | 'unknown' = (function resolveRuntime() {
+    if ('Bun' in globalThis) {
+        return 'bun'
+    } else if (process.versions.node) {
+        return 'node'
+    } else {
+        return 'unknown'
+    }
+})()
+
+const packageManager: 'bun' | 'npm' | 'pnpm' = (function resolvePackageManager() {
+    if (process.env['npm_config_user_agent']?.includes('pnpm')) {
+        return 'pnpm'
+    } else if (process.env['npm_lifecycle_event'] === 'bunx') {
+        return 'bun'
+    } else {
+        return 'npm'
+    }
+})()
 
 if (process.argv.some(arg => arg === '-h' || arg === '--help')) {
     printHelp()
@@ -13,11 +29,20 @@ if (process.argv.some(arg => arg === '-h' || arg === '--help')) {
 
 function printHelp(e?: string): never {
     if (e) printError(e)
-    console.log('create-dank [OPTIONS...] --out-dir OUT_DIR')
+    console.log(packageManager, 'create dank [OPTIONS...] --out-dir OUT_DIR')
     console.log()
     console.log('OPTIONS:')
     console.log('   --package-name     Specify name for package.json')
     process.exit(1)
+}
+
+function runtimeNativeTS() {
+    if (runtime !== 'node') {
+        return true
+    } else {
+        const major = parseInt(process.version.substring(1, 3), 10)
+        return !isNaN(major) && major >= 24
+    }
 }
 
 const args = (function collectProgramArgs(): Array<string> {
@@ -78,7 +103,7 @@ await Promise.all(
     ['pages', 'public'].map(subdir => mkdir(join(opts.outDir, subdir))),
 )
 
-const latestVersion = await getLatestDankVersion()
+const latestVersion = await getLatestVersion('@eighty4/dank', '0.0.0')
 
 await Promise.all([
     await writeFile(
@@ -99,9 +124,8 @@ await Promise.all([
 `,
     ),
 
-    // todo if runtime is node and version < 24, use .js
     await writeFile(
-        join(opts.outDir, 'dank.config.ts'),
+        join(opts.outDir, runtimeNativeTS()  ? 'dank.config.ts' : 'dank.config.js'),
         `\
 import { defineConfig } from '@eighty4/dank'
 
@@ -148,7 +172,6 @@ h1 {
     ),
 ])
 
-// todo resolve bun, npm or pnpm for getting started instructions
 console.log(
     green('✔'),
     'created your',
@@ -158,23 +181,23 @@ console.log(
 )
 console.log()
 console.log('        cd', /^\.?\//.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`)
-console.log('        npm i')
-console.log('        npm run dev')
+console.log(`        ${packageManager} i`)
+console.log(`        ${packageManager === 'npm' ? 'npm run' : packageManager} dev`)
 console.log()
 console.log('    Enjoy!')
 console.log()
 
-async function getLatestDankVersion() {
+async function getLatestVersion(packageName: string, fallback: string): Promise<string> {
     try {
         const response = await fetch(
-            `https://registry.npmjs.org/@eighty4/dank/latest`,
+            `https://registry.npmjs.org/${packageName}/latest`,
         )
         if (response.ok) {
             const { version } = await response.json()
             return version
         }
     } catch (error) {}
-    return '0.0.0'
+    return fallback
 }
 
 function printError(e: string | Error) {
