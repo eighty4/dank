@@ -14,6 +14,10 @@ function isCorepackEnabled(): boolean {
     return !!process.env['COREPACK_ROOT']?.length
 }
 
+function isCorepackBundled(): boolean {
+    return nodeMajorVersion() < 25
+}
+
 const runtime: 'bun' | 'node' | 'unknown' = (function resolveRuntime() {
     if ('Bun' in globalThis) {
         return 'bun'
@@ -54,8 +58,7 @@ function runtimeNativeTS() {
     if (runtime !== 'node') {
         return true
     } else {
-        const major = parseInt(process.version.substring(1, 3), 10)
-        return !isNaN(major) && major >= 24
+        return nodeMajorVersion() >= 24
     }
 }
 
@@ -222,6 +225,9 @@ console.log(
 console.log()
 console.log('        cd', /^\.?\//.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`)
 if (opts.corepack && !isCorepackEnabled()) {
+    if (!isCorepackBundled()) {
+        console.log(`        ${packageManager} i -g corepack`)
+    }
     console.log(`        corepack enable`)
 }
 console.log(`        ${packageManager} i`)
@@ -229,6 +235,14 @@ console.log(`        ${packageManager === 'npm' ? 'npm run' : packageManager} de
 console.log()
 console.log('    Enjoy!')
 console.log()
+
+function nodeMajorVersion(): number {
+    if (runtime !== 'node') {
+        throw Error('not node')
+    }
+    const [major] = process.version.substring(1).split('.')
+    return parseInt(major, 10)
+}
 
 async function getLatestVersion(packageName: string): Promise<string> {
     try {
