@@ -10,14 +10,6 @@ const FALLBACKS: Record<string, string> = {
     'pnpm': '10.17.1',
 }
 
-function isCorepackEnabled(): boolean {
-    return !!process.env['COREPACK_ROOT']?.length
-}
-
-function isCorepackBundled(): boolean {
-    return nodeMajorVersion() < 25
-}
-
 const runtime: 'bun' | 'node' | 'unknown' = (function resolveRuntime() {
     if ('Bun' in globalThis) {
         return 'bun'
@@ -52,14 +44,6 @@ function printHelp(e?: string): never {
     }
     console.log('   --package-name     Specify name for package.json')
     process.exit(1)
-}
-
-function runtimeNativeTS() {
-    if (runtime !== 'node') {
-        return true
-    } else {
-        return nodeMajorVersion() >= 24
-    }
 }
 
 const args = (function collectProgramArgs(): Array<string> {
@@ -235,6 +219,22 @@ console.log(`        ${packageManager === 'npm' ? 'npm run' : packageManager} de
 console.log()
 console.log('    Enjoy!')
 console.log()
+
+function isCorepackEnabled(): boolean {
+    return !!process.env['COREPACK_ROOT']?.length
+}
+
+function isCorepackBundled(): boolean {
+    return nodeMajorVersion() < 25
+}
+
+function runtimeNativeTS() {
+    if (runtime !== 'node') {
+        return true
+    } else {
+        return nodeMajorVersion() >= 24
+    }
+}
 
 function nodeMajorVersion(): number {
     if (runtime !== 'node') {
