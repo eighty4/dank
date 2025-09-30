@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
+import { extname } from 'node:path/posix'
 import {
     defaultTreeAdapter,
     type DefaultTreeAdapterTypes,
@@ -75,12 +76,12 @@ export class HtmlEntrypoint {
                 ) {
                     importScript.elem.attrs.find(
                         attr => attr.name === 'src',
-                    )!.value = rewriteTo || `/${importScript.out}.js`
+                    )!.value = rewriteTo || `/${importScript.out}`
                 }
             } else if (importScript.type === 'style') {
                 importScript.elem.attrs.find(
                     attr => attr.name === 'href',
-                )!.value = rewriteTo || `/${importScript.out}.css`
+                )!.value = rewriteTo || `/${importScript.out}`
             }
         }
     }
@@ -182,12 +183,19 @@ export class HtmlEntrypoint {
 
     #addScript(type: ImportedScript['type'], href: string, elem: Element) {
         const inPath = join(dirname(this.#fsPath), href)
+        let outPath = inPath.replace(/^pages\//, '')
+        if (type === 'script' && !outPath.endsWith('.js')) {
+            outPath = outPath.replace(
+                new RegExp(extname(outPath).substring(1) + '$'),
+                'js',
+            )
+        }
         this.#scripts.push({
             type,
             href,
             elem,
             in: inPath,
-            out: inPath.replace(/^pages\//, ''),
+            out: outPath,
         })
     }
 }
