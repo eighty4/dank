@@ -42,7 +42,7 @@ export async function buildWebsite(c: DankConfig): Promise<DankBuild> {
     const result = new Set(buildUrls)
     await writeBuildManifest(buildTag, result)
     return {
-        dir: buildDir,
+        dir: distDir,
         files: result,
     }
 }
