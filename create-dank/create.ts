@@ -140,7 +140,7 @@ export default defineConfig({
     await writeFile(
         join(opts.outDir, 'pages', 'dank.html'),
         `\
-<DOCTYPE!>
+<!DOCTYPE html>
 <html>
 <head>
 <title>Dank 'n Eggs</title>
