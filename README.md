@@ -1,21 +1,25 @@
 # Build DANK webpages
 
-DANK has some perks:
+### DANK has some perks:
 
 - Webpage-first development for multi-page websites
+- TypeScript supported with `<script src="./dank.ts">`
 - Code splitting via `esbuild` bundler across all webpages
+- Hashes added to all bundled assets for efficient cache utilization
 - `dank serve` updates CSS in real-time (hot-reloading)
 - `dank serve` launches development processes and merges their stdio
 - `dank serve --preview` builds the website and serves the output from `dist`
 - `dank build --production` optimizes with `esbuild` minifying and tree-shaking
-- DANK's codebase is so tiny you can read it all in 20 mins
+- DANK's codebase is so tiny you can read it all in 20 minutes
 
-DANK isn't for every use case.
+### DANK isn't for every use case!
+
 [Vite](https://vite.dev) is the right move for building a Single-Page Application.
-For SEO optimizing dynamic content with Server-Side Rendering,
-check out [Next.js](https://nextjs.org) or [Astro](https://astro.build).
 
-DANK is an ideal choice for building multi-page websites deployed to a CDN.
+Dynamic content with Static-Site Generation or Server-Side Rendering should use
+[Astro](https://astro.build), [Next.js](https://nextjs.org) or [SvelteKit](https://svelte.dev).
+
+#### DANK is an ideal choice for multi-page websites deployed to a CDN that integrate with serverless components and APIs.
 
 ## Getting started
 
@@ -42,7 +46,7 @@ export default defineConfig({
 })
 ```
 
-Streamline development with `dank serve` launching API when starting your dev server:
+Streamline development with `dank serve` launching APIs and databases when starting your website's dev server:
 
 ```typescript
 import { defineConfig } from '@eighty4/dank'
