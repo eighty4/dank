@@ -21,6 +21,11 @@ const jsBuildOptions: BuildOptions & { metafile: true; write: true } = {
 const webpageBuildOptions: BuildOptions & { metafile: true; write: true } = {
     assetNames: 'assets/[name]-[hash]',
     format: 'esm',
+    loader: {
+        '.tff': 'file',
+        '.woff': 'file',
+        '.woff2': 'file',
+    },
     ...jsBuildOptions,
 }
 

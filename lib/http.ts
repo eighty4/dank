@@ -90,6 +90,12 @@ function resolveMimeType(url: URL): string {
             return 'image/svg+xml'
         case '.png':
             return 'image/png'
+        case '.ttf':
+            return 'font/ttf'
+        case '.woff':
+            return 'font/woff'
+        case '.woff2':
+            return 'font/woff2'
         default:
             console.warn('? mime type for', url.pathname)
             if (!isProductionBuild()) process.exit(1)
