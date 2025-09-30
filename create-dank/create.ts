@@ -107,6 +107,11 @@ const latestVersion = await getLatestVersion('@eighty4/dank', '0.0.0')
 
 await Promise.all([
     await writeFile(
+        join(opts.outDir, '.gitignore'),
+        'build\n',
+    ),
+
+    await writeFile(
         join(opts.outDir, 'package.json'),
         `\
 {
