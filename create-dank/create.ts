@@ -143,7 +143,7 @@ const packageManagerJson = await (async function resolveVersion(): Promise<Packa
 await Promise.all([
     await writeFile(
         join(opts.outDir, '.gitignore'),
-        'build\n',
+        'build\nnode_modules\n',
     ),
 
     await writeFile(
