@@ -148,10 +148,9 @@ jobs:
           node-version: 24
       - name: publish registry
         env:
-          GIT_TAG: ${{ needs.create-git-tag.outputs.tag }}
+          VERSION: ${{ needs.create-git-tag.outputs.version }}
         run: |
           PKG_NAME=$(cat package.json | jq -r ".name")
-          VERSION=${GIT_TAG:1}
           echo "#### Published to npm as [$PKG_NAME](https://www.npmjs.com/package/$PKG_NAME/v/$VERSION)" >> release_notes.md
           echo >> release_notes.md
       - name: '@eighty4/dank instructions'
