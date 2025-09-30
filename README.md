@@ -19,7 +19,7 @@ DANK is an ideal choice for building multi-page websites deployed to a CDN.
 
 ## Getting started
 
-```
+```shell
 bun create dank --out-dir www
 
 npm create dank -- --out-dir www
