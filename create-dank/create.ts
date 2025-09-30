@@ -172,12 +172,21 @@ export default defineConfig({
 <head>
 <title>Dank 'n Eggs</title>
 <link rel="stylesheet" href="./dank.css"/>
+<script src="./dank.ts" type="module"></script>
 </head>
 <body>
 <h1>Your skillet is ready.</h1>
 </body>
 </html>
 `,
+    ),
+
+    await writeFile(
+        join(opts.outDir, 'pages', 'dank.ts'),
+        `\
+const greeting: string = 'hello'
+console.log(greeting, 'dankness')
+`
     ),
 
     await writeFile(
