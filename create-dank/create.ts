@@ -3,6 +3,17 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
+// fallbacks for npm packages if network error
+const FALLBACKS: Record<string, string> = {
+    '@eighty4/dank': '0.0.0',
+    'npm': '11.6.1',
+    'pnpm': '10.17.1',
+}
+
+function isCorepackEnabled(): boolean {
+    return !!process.env['COREPACK_ROOT']?.length
+}
+
 const runtime: 'bun' | 'node' | 'unknown' = (function resolveRuntime() {
     if ('Bun' in globalThis) {
         return 'bun'
@@ -32,6 +43,9 @@ function printHelp(e?: string): never {
     console.log(packageManager, 'create dank [OPTIONS...] --out-dir OUT_DIR')
     console.log()
     console.log('OPTIONS:')
+    if (!isCorepackEnabled()) {
+        console.log(`   --corepack         ${packageManager === 'bun' || runtime === 'bun' ? `${red('✗')} not applicable for Bun` : `Use latest version of ${packageManager} via corepack`}`)
+    }
     console.log('   --package-name     Specify name for package.json')
     process.exit(1)
 }
@@ -64,15 +78,21 @@ const args = (function collectProgramArgs(): Array<string> {
 })()
 
 type CreateDankOpts = {
+    corepack: boolean
     outDir: string
     packageName?: string
 }
 
 const opts: CreateDankOpts = (function parseCreateOpts() {
-    const result: Partial<CreateDankOpts> = {}
+    const result: Partial<CreateDankOpts> = {
+        corepack: isCorepackEnabled(),
+    }
     let shifted: string | undefined
     while ((shifted = args.shift())) {
         switch (shifted) {
+            case '--corepack':
+                result.corepack = true
+                break
             case '--out-dir':
                 if (typeof (shifted = args.shift()) === 'undefined' || shifted.startsWith('--')) {
                     printHelp('--out-dir value is missing')
@@ -103,7 +123,22 @@ await Promise.all(
     ['pages', 'public'].map(subdir => mkdir(join(opts.outDir, subdir))),
 )
 
-const latestVersion = await getLatestVersion('@eighty4/dank', '0.0.0')
+const latestVersion = await getLatestVersion('@eighty4/dank')
+
+type PackageManagerJson = '' | `\n    "packageManager": "${'npm'|'pnpm'}@${string}",`
+
+const packageManagerJson = await (async function resolveVersion(): Promise<PackageManagerJson> {
+    if (opts.corepack) {
+        switch (packageManager) {
+            case 'npm':
+            case 'pnpm':
+                const version = await getLatestVersion(packageManager)
+                return `
+    "packageManager": "${packageManager}@${version}",`
+        }
+    }
+    return ''
+})()
 
 await Promise.all([
     await writeFile(
@@ -116,7 +151,7 @@ await Promise.all([
         `\
 {
     "name": "${opts.packageName || 'dank-n-eggs'}",
-    "version": "0.0.0",
+    "version": "0.0.0",${packageManagerJson}
     "type": "module",
     "scripts": {
         "build": "dank build",
@@ -186,13 +221,16 @@ console.log(
 )
 console.log()
 console.log('        cd', /^\.?\//.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`)
+if (opts.corepack && !isCorepackEnabled()) {
+    console.log(`        corepack enable`)
+}
 console.log(`        ${packageManager} i`)
 console.log(`        ${packageManager === 'npm' ? 'npm run' : packageManager} dev`)
 console.log()
 console.log('    Enjoy!')
 console.log()
 
-async function getLatestVersion(packageName: string, fallback: string): Promise<string> {
+async function getLatestVersion(packageName: string): Promise<string> {
     try {
         const response = await fetch(
             `https://registry.npmjs.org/${packageName}/latest`,
@@ -202,7 +240,7 @@ async function getLatestVersion(packageName: string, fallback: string): Promise<
             return version
         }
     } catch (error) {}
-    return fallback
+    return FALLBACKS[packageName]
 }
 
 function printError(e: string | Error) {
