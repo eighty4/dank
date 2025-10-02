@@ -2,7 +2,7 @@ export type DankConfig = {
     // used for releases and service worker caching
     // buildTag?:  (() => Promise<string> | string) | string
     // mapping url to fs paths of webpages to build
-    pages: Record<`/${string}`, `./${string}.html`>
+    pages: Record<`/${string}`, `${string}.html`>
 
     services?: Array<DevService>
 }
@@ -18,6 +18,7 @@ export async function defineConfig(
 ): Promise<DankConfig> {
     validatePages(c.pages)
     validateDevServices(c.services)
+    normalizePagePaths(c.pages)
     return c as DankConfig
 }
 
@@ -75,5 +76,11 @@ function validateDevServices(services: DankConfig['services']) {
                 }
             }
         }
+    }
+}
+
+function normalizePagePaths(pages: any) {
+    for (const urlPath of Object.keys(pages)) {
+        pages[urlPath] = pages[urlPath].replace(/^\.\//, '')
     }
 }

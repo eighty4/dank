@@ -40,6 +40,8 @@ export async function esbuildDevContext(
         entryPoints: removeEntryPointOutExt(entryPoints),
         outdir,
         ...webpageBuildOptions,
+        metafile: false,
+        write: false,
     })
 }
 
