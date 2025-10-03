@@ -1,5 +1,15 @@
 # Build DANK webpages
 
+### Get developing right away:
+
+```shell
+bun create dank --out-dir www
+
+npm create dank -- --out-dir www
+
+pnpm create dank --out-dir www
+```
+
 ### DANK has some perks:
 
 - Webpage-first development for multi-page websites
@@ -20,16 +30,6 @@ Dynamic content with Static-Site Generation or Server-Side Rendering should use
 [Astro](https://astro.build), [Next.js](https://nextjs.org) or [SvelteKit](https://svelte.dev).
 
 #### DANK is an ideal choice for multi-page websites deployed to a CDN that integrate with serverless components and APIs.
-
-## Getting started
-
-```shell
-bun create dank --out-dir www
-
-npm create dank -- --out-dir www
-
-pnpm create dank --out-dir www
-```
 
 ## `dank.config.ts` examples
 
