@@ -54,25 +54,43 @@ new EventSource('http://127.0.0.1:2999/esbuild').addEventListener(
     },
 )
 
-function addCssUpdateIndicator() {
+export function addCssUpdateIndicator() {
     const indicator = createUpdateIndicator('green', '9999')
-    indicator.style.transition = 'opacity ease-in-out .38s'
     indicator.style.opacity = '0'
-    indicator.ontransitionend = () => {
-        if (indicator.style.opacity === '1') {
-            indicator.style.opacity = '0'
-        } else {
-            indicator.remove()
-            indicator.onload = null
-            indicator.ontransitionend = null
-        }
-    }
+    indicator.animate(
+        [
+            { opacity: 0 },
+            { opacity: 1 },
+            { opacity: 1 },
+            { opacity: 1 },
+            { opacity: 0.75 },
+            { opacity: 0.5 },
+            { opacity: 0.25 },
+            { opacity: 0 },
+        ],
+        {
+            duration: 400,
+            iterations: 1,
+            direction: 'normal',
+            easing: 'linear',
+        },
+    )
     document.body.appendChild(indicator)
-    setTimeout(() => (indicator.style.opacity = '1'), 0)
+    Promise.all(indicator.getAnimations().map(a => a.finished)).then(() =>
+        indicator.remove(),
+    )
 }
 
 function addJsReloadIndicator() {
-    document.body.appendChild(createUpdateIndicator('orange', '9000'))
+    const indicator = createUpdateIndicator('orange', '9000')
+    indicator.style.opacity = '0'
+    indicator.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: 400,
+        iterations: 1,
+        direction: 'normal',
+        easing: 'ease-in',
+    })
+    document.body.appendChild(indicator)
 }
 
 function createUpdateIndicator(
