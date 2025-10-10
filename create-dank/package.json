@@ -2,6 +2,8 @@
     "name": "create-dank",
     "version": "0.0.1-16",
     "type": "module",
+    "license": "MIT",
+    "author": "Adam McKee Bennett <adam.be.g84d@gmail.com>",
     "bin": "./lib_js/create.js",
     "devDependencies": {
         "prettier": "^3.6.2",

@@ -2,6 +2,8 @@
     "name": "@eighty4/dank",
     "version": "0.0.2",
     "type": "module",
+    "license": "MIT",
+    "author": "Adam McKee Bennett <adam.be.g84d@gmail.com>",
     "packageManager": "pnpm@10.17.1",
     "description": "Multi-page development system for CDN-deployed websites",
     "keywords": [
