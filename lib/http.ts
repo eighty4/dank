@@ -79,17 +79,62 @@ export function createDevServeFilesFetcher(
                 if (fromPublic) {
                     streamFile(maybePublicPath, res)
                 } else {
-                    fetch(proxyAddress + url.pathname).then(fetchResponse => {
-                        res.writeHead(
-                            fetchResponse.status,
-                            convertHeadersFromFetch(fetchResponse.headers),
-                        )
-                        fetchResponse.bytes().then(data => res.end(data))
-                    })
+                    retryFetchWithTimeout(proxyAddress + url.pathname)
+                        .then(fetchResponse => {
+                            res.writeHead(
+                                fetchResponse.status,
+                                convertHeadersFromFetch(fetchResponse.headers),
+                            )
+                            fetchResponse.bytes().then(data => res.end(data))
+                        })
+                        .catch(e => {
+                            if (e === 'retrytimeout') {
+                                res.writeHead(504)
+                            } else {
+                                console.error(
+                                    'unknown frontend proxy fetch error:',
+                                    e,
+                                )
+                                res.writeHead(502)
+                            }
+                            res.end()
+                        })
                 }
             })
         }
     }
+}
+
+const PROXY_FETCH_RETRY_INTERVAL = 27
+const PROXY_FETCH_RETRY_TIMEOUT = 1000
+
+async function retryFetchWithTimeout(url: string): Promise<Response> {
+    let timeout = Date.now() + PROXY_FETCH_RETRY_TIMEOUT
+    while (true) {
+        try {
+            return await fetch(url)
+        } catch (e: any) {
+            if (isNodeFailedFetch(e) || isBunFailedFetch(e)) {
+                if (timeout < Date.now()) {
+                    throw 'retrytimeout'
+                } else {
+                    await new Promise(res =>
+                        setTimeout(res, PROXY_FETCH_RETRY_INTERVAL),
+                    )
+                }
+            } else {
+                throw e
+            }
+        }
+    }
+}
+
+function isBunFailedFetch(e: any): boolean {
+    return e.code === 'ConnectionRefused'
+}
+
+function isNodeFailedFetch(e: any): boolean {
+    return e.message === 'fetch failed'
 }
 
 async function exists(p: string): Promise<boolean> {

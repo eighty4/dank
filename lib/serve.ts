@@ -42,7 +42,6 @@ async function startPreviewMode(c: DankConfig) {
 }
 
 // todo changing partials triggers update on html pages
-// todo proxy to esbuild handles `failed to fetch` with retry interval and 504 timeout
 async function startDevMode(c: DankConfig, signal: AbortSignal) {
     const watchDir = join('build', 'watch')
     await mkdir(watchDir, { recursive: true })
