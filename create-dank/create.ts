@@ -100,6 +100,8 @@ const opts: CreateDankOpts = (function parseCreateOpts() {
     return result as CreateDankOpts
 })()
 
+const assetsDir = join(import.meta.dirname.replace(/lib_js$/, ''), 'assets')
+
 try {
     await mkdir(opts.outDir)
 } catch {
@@ -209,11 +211,11 @@ h1 {
 `,
     ),
 
-    ...(await readdir(join(import.meta.dirname, 'assets'))).map(copyAsset)
+    ...(await readdir(assetsDir)).map(copyAsset)
 ])
 
 async function copyAsset(filename: string): Promise<void> {
-    const from = join(import.meta.dirname, 'assets', filename)
+    const from = join(assetsDir, filename)
     const to = join(opts.outDir, 'public', filename)
     return await copyFile(from, to)
 }
