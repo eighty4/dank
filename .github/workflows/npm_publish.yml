@@ -168,7 +168,7 @@ jobs:
       - name: changelog notes
         id: out
         env:
-          CHANGELOG_TAG: ${{ inputs.semver-bump == 'prerelease' && 'Unreleased' || needs.create-git-tag.outputs.tag }}
+          CHANGELOG_TAG: ${{ inputs.semver-bump == 'prerelease' && 'Unreleased' || format('v{0}', needs.create-git-tag.outputs.version) }}
         run: |
           echo "## Release notes" >> release_notes.md
           echo >> release_notes.md
