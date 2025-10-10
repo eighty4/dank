@@ -1,6 +1,6 @@
 {
     "name": "@eighty4/dank",
-    "version": "0.0.1-4",
+    "version": "0.0.1",
     "type": "module",
     "packageManager": "pnpm@10.17.1",
     "description": "Multi-page development system for CDN-deployed websites",
