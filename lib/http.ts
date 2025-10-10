@@ -8,7 +8,7 @@ import {
     type ServerResponse,
 } from 'node:http'
 import { extname, join } from 'node:path'
-import { isProductionBuild } from './flags.ts'
+import mime from 'mime'
 
 export type FrontendFetcher = (
     url: URL,
@@ -147,8 +147,7 @@ async function exists(p: string): Promise<boolean> {
 }
 
 function streamFile(p: string, res: ServerResponse) {
-    const mimeType = resolveMimeType(p)
-    res.setHeader('Content-Type', mimeType)
+    res.setHeader('Content-Type', mime.getType(p) || 'application/octet-stream')
     const reading = createReadStream(p)
     reading.pipe(res)
     reading.on('error', err => {
@@ -156,33 +155,6 @@ function streamFile(p: string, res: ServerResponse) {
         res.statusCode = 500
         res.end()
     })
-}
-
-function resolveMimeType(p: string): string {
-    switch (extname(p)) {
-        case '.html':
-            return 'text/html'
-        case '.js':
-            return 'text/javascript'
-        case '.json':
-            return 'application/json'
-        case '.css':
-            return 'text/css'
-        case '.svg':
-            return 'image/svg+xml'
-        case '.png':
-            return 'image/png'
-        case '.ttf':
-            return 'font/ttf'
-        case '.woff':
-            return 'font/woff'
-        case '.woff2':
-            return 'font/woff2'
-        default:
-            console.warn('? mime type for', p)
-            if (!isProductionBuild()) process.exit(1)
-            return 'application/octet-stream'
-    }
 }
 
 function convertHeadersFromFetch(from: Headers): OutgoingHttpHeaders {

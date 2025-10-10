@@ -26,6 +26,7 @@
     },
     "dependencies": {
         "esbuild": "^0.25.10",
+        "mime": "^4.1.0",
         "parse5": "^8.0.0"
     },
     "devDependencies": {

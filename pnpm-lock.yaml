@@ -11,6 +11,9 @@ importers:
       esbuild:
         specifier: ^0.25.10
         version: 0.25.10
+      mime:
+        specifier: ^4.1.0
+        version: 4.1.0
       parse5:
         specifier: ^8.0.0
         version: 8.0.0
@@ -204,6 +207,11 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  mime@4.1.0:
+    resolution: {integrity: sha512-X5ju04+cAzsojXKes0B/S4tcYtFAJ6tTMuSPBEn9CPGlrWr8Fiw7qYeLT0XyH80HSoAoqWCaz+MWKh22P7G1cw==}
+    engines: {node: '>=16'}
+    hasBin: true
+
   parse5@8.0.0:
     resolution: {integrity: sha512-9m4m5GSgXjL4AjumKzq1Fgfp3Z8rsvjRNbnkVwfu2ImRqE5D0LnY2QfDen18FSY9C573YU5XxSapdHZTZ2WolA==}
 
@@ -334,6 +342,8 @@ snapshots:
       '@esbuild/win32-arm64': 0.25.10
       '@esbuild/win32-ia32': 0.25.10
       '@esbuild/win32-x64': 0.25.10
+
+  mime@4.1.0: {}
 
   parse5@8.0.0:
     dependencies:

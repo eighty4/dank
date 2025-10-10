@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
-- ???
+### Added
+
+- Delegating to package `mime` for comprehensive file support when developing
+  with `dank serve`
 
 ## [v0.0.1] - 2025-10-10
 
