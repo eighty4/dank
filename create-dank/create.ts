@@ -5,9 +5,9 @@ import { join } from 'node:path'
 
 // fallbacks for npm packages if network error
 const FALLBACKS: Record<string, string> = {
-    '@eighty4/dank': '0.0.0',
-    'npm': '11.6.1',
-    'pnpm': '10.17.1',
+    '@eighty4/dank': '0.0.1',
+    'npm': '11.6.2',
+    'pnpm': '10.18.2',
 }
 
 const runtime: 'bun' | 'node' | 'unknown' = (function resolveRuntime() {
