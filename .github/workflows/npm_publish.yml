@@ -35,9 +35,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: changelog entries
-        if: ${{ inputs.semver-bump != 'prerelease' }}
-        run: npx -y @eighty4/changelog@latest check
       - name: '@eighty4/dank to work_dir'
         if: ${{ inputs.package == '@eighty4/dank' }}
         run: echo "work_dir=./" > wd
@@ -47,6 +44,10 @@ jobs:
       - name: work_dir to outputs
         id: work_dir
         run: cat wd >> "$GITHUB_OUTPUT"
+      - name: changelog entries
+        if: ${{ inputs.semver-bump != 'prerelease' }}
+        run: npx -y @eighty4/changelog@latest check
+        working-directory: ${{ steps.work_dir.outputs.work_dir }}
     outputs:
       work_dir: ${{ steps.work_dir.outputs.work_dir }}
 
