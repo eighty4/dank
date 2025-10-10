@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 // fallbacks for npm packages if network error
@@ -171,6 +171,8 @@ export default defineConfig({
 <html>
 <head>
 <title>Dank 'n Eggs</title>
+<link rel="icon" type="image/svg+xml" href="/dank.svg" />
+<link rel="shortcut icon" href="/dank.ico" sizes="any" />
 <link rel="stylesheet" href="./dank.css"/>
 <script src="./dank.ts" type="module"></script>
 </head>
@@ -206,7 +208,15 @@ h1 {
 }
 `,
     ),
+
+    ...(await readdir(join(import.meta.dirname, 'assets'))).map(copyAsset)
 ])
+
+async function copyAsset(filename: string): Promise<void> {
+    const from = join(import.meta.dirname, 'assets', filename)
+    const to = join(opts.outDir, 'public', filename)
+    return await copyFile(from, to)
+}
 
 console.log(
     green('✔'),
