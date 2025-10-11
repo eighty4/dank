@@ -59,8 +59,11 @@ pnpm typecheck
 echo '\n*** @eighty4/dank: dank build ***'
 pnpm build
 
+echo '\n*** @eighty4/dank: fmtcheck ***'
+pnpm fmtcheck
+
 echo '\n*** create-dank: tsc ***'
 (cd create-dank && pnpm build)
 
-echo '\n*** prettier --check ***'
-pnpm fmtcheck
+echo '\n*** create-dank: fmtcheck ***'
+(cd create-dank && pnpm fmtcheck)

@@ -6,8 +6,8 @@ import { join } from 'node:path'
 // fallbacks for npm packages if network error
 const FALLBACKS: Record<string, string> = {
     '@eighty4/dank': '0.0.2',
-    'npm': '11.6.2',
-    'pnpm': '10.18.2',
+    npm: '11.6.2',
+    pnpm: '10.18.2',
 }
 
 const runtime: 'bun' | 'node' | 'unknown' = (function resolveRuntime() {
@@ -20,15 +20,16 @@ const runtime: 'bun' | 'node' | 'unknown' = (function resolveRuntime() {
     }
 })()
 
-const packageManager: 'bun' | 'npm' | 'pnpm' = (function resolvePackageManager() {
-    if (process.env['npm_config_user_agent']?.includes('pnpm')) {
-        return 'pnpm'
-    } else if (process.env['npm_lifecycle_event'] === 'bunx') {
-        return 'bun'
-    } else {
-        return 'npm'
-    }
-})()
+const packageManager: 'bun' | 'npm' | 'pnpm' =
+    (function resolvePackageManager() {
+        if (process.env['npm_config_user_agent']?.includes('pnpm')) {
+            return 'pnpm'
+        } else if (process.env['npm_lifecycle_event'] === 'bunx') {
+            return 'bun'
+        } else {
+            return 'npm'
+        }
+    })()
 
 if (process.argv.some(arg => arg === '-h' || arg === '--help')) {
     printHelp()
@@ -40,7 +41,9 @@ function printHelp(e?: string): never {
     console.log()
     console.log('OPTIONS:')
     if (!isCorepackEnabled()) {
-        console.log(`   --corepack         ${packageManager === 'bun' || runtime === 'bun' ? `${red('✗')} not applicable for Bun` : `Use latest version of ${packageManager} via corepack`}`)
+        console.log(
+            `   --corepack         ${packageManager === 'bun' || runtime === 'bun' ? `${red('✗')} not applicable for Bun` : `Use latest version of ${packageManager} via corepack`}`,
+        )
     }
     console.log('   --package-name     Specify name for package.json')
     process.exit(1)
@@ -81,13 +84,19 @@ const opts: CreateDankOpts = (function parseCreateOpts() {
                 result.corepack = true
                 break
             case '--out-dir':
-                if (typeof (shifted = args.shift()) === 'undefined' || shifted.startsWith('--')) {
+                if (
+                    typeof (shifted = args.shift()) === 'undefined' ||
+                    shifted.startsWith('--')
+                ) {
                     printHelp('--out-dir value is missing')
                 }
                 result.outDir = shifted
                 break
             case '--package-name':
-                if (typeof (shifted = args.shift()) === 'undefined' || shifted.startsWith('--')) {
+                if (
+                    typeof (shifted = args.shift()) === 'undefined' ||
+                    shifted.startsWith('--')
+                ) {
                     printHelp('--package-name value is missing')
                 }
                 result.packageName = shifted
@@ -114,26 +123,26 @@ await Promise.all(
 
 const latestVersion = await getLatestVersion('@eighty4/dank')
 
-type PackageManagerJson = '' | `\n    "packageManager": "${'npm'|'pnpm'}@${string}",`
+type PackageManagerJson =
+    | ''
+    | `\n    "packageManager": "${'npm' | 'pnpm'}@${string}",`
 
-const packageManagerJson = await (async function resolveVersion(): Promise<PackageManagerJson> {
-    if (opts.corepack) {
-        switch (packageManager) {
-            case 'npm':
-            case 'pnpm':
-                const version = await getLatestVersion(packageManager)
-                return `
+const packageManagerJson =
+    await (async function resolveVersion(): Promise<PackageManagerJson> {
+        if (opts.corepack) {
+            switch (packageManager) {
+                case 'npm':
+                case 'pnpm':
+                    const version = await getLatestVersion(packageManager)
+                    return `
     "packageManager": "${packageManager}@${version}",`
+            }
         }
-    }
-    return ''
-})()
+        return ''
+    })()
 
 await Promise.all([
-    await writeFile(
-        join(opts.outDir, '.gitignore'),
-        'build\nnode_modules\n',
-    ),
+    await writeFile(join(opts.outDir, '.gitignore'), 'build\nnode_modules\n'),
 
     await writeFile(
         join(opts.outDir, 'package.json'),
@@ -154,7 +163,10 @@ await Promise.all([
     ),
 
     await writeFile(
-        join(opts.outDir, runtimeNativeTS()  ? 'dank.config.ts' : 'dank.config.js'),
+        join(
+            opts.outDir,
+            runtimeNativeTS() ? 'dank.config.ts' : 'dank.config.js',
+        ),
         `\
 import { defineConfig } from '@eighty4/dank'
 
@@ -190,7 +202,7 @@ export default defineConfig({
         `\
 const greeting: string = 'hello'
 console.log(greeting, 'dankness')
-`
+`,
     ),
 
     await writeFile(
@@ -211,7 +223,7 @@ h1 {
 `,
     ),
 
-    ...(await readdir(assetsDir)).map(copyAsset)
+    ...(await readdir(assetsDir)).map(copyAsset),
 ])
 
 async function copyAsset(filename: string): Promise<void> {
@@ -228,7 +240,10 @@ console.log(
     bold(/^(\.|\/)/.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`),
 )
 console.log()
-console.log('        cd', /^\.?\//.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`)
+console.log(
+    '        cd',
+    /^\.?\//.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`,
+)
 if (opts.corepack && !isCorepackEnabled()) {
     if (!isCorepackBundled()) {
         console.log(`        ${packageManager} i -g corepack`)
@@ -236,7 +251,9 @@ if (opts.corepack && !isCorepackEnabled()) {
     console.log(`        corepack enable`)
 }
 console.log(`        ${packageManager} i`)
-console.log(`        ${packageManager === 'npm' ? 'npm run' : packageManager} dev`)
+console.log(
+    `        ${packageManager === 'npm' ? 'npm run' : packageManager} dev`,
+)
 console.log()
 console.log('    Enjoy!')
 console.log()

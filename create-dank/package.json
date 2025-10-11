@@ -11,8 +11,8 @@
     },
     "scripts": {
         "build": "tsc",
-        "fmt": "prettier --write create.ts",
-        "fmtcheck": "perttier --check create.ts",
+        "fmt": "prettier --write .",
+        "fmtcheck": "prettier --check .",
         "typecheck": "tsc --noEmit"
     },
     "files": [
