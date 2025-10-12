@@ -15,10 +15,10 @@ function printHelp(task?: 'build' | 'serve'): never {
         )
     }
     console.log('\nOPTIONS:')
+    if (!task || task === 'serve')
+        console.log('  --log-http     print access logs')
     console.log('  --minify       minify sources')
-    // if (!task || task === 'serve') {
-    // console.log('  --preview      pre-bundle and build ServiceWorker')
-    // }
+    // if (!task || task === 'serve') console.log('  --preview      pre-bundle and build ServiceWorker')
     console.log('  --production   build for production release')
     if (task) {
         console.log()

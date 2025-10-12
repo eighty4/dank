@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-- ???
+### Added
+
+- `dank serve --log-http` prints HTTP access logs during development
 
 ## [v0.0.2] - 2025-10-10
 

@@ -9,6 +9,7 @@ import {
 } from 'node:http'
 import { extname, join } from 'node:path'
 import mime from 'mime'
+import { isLogHttp } from './flags.ts'
 
 export type FrontendFetcher = (
     url: URL,
@@ -21,7 +22,7 @@ export function createWebServer(
     frontendFetcher: FrontendFetcher,
 ): ReturnType<typeof createServer> {
     const serverAddress = 'http://localhost:' + port
-    return createServer((req: IncomingMessage, res: ServerResponse) => {
+    const handler = (req: IncomingMessage, res: ServerResponse) => {
         if (!req.url || !req.method) {
             res.end()
         } else {
@@ -33,7 +34,19 @@ export function createWebServer(
                 frontendFetcher(url, convertHeadersToFetch(req.headers), res)
             }
         }
-    })
+    }
+    return createServer(isLogHttp() ? createLogWrapper(handler) : handler)
+}
+
+type RequestListener = (req: IncomingMessage, res: ServerResponse) => void
+function createLogWrapper(handler: RequestListener): RequestListener {
+    return (req, res) => {
+        console.log('  > ', req.method, req.url)
+        res.on('close', () => {
+            console.log('', res.statusCode, req.method, req.url)
+        })
+        handler(req, res)
+    }
 }
 
 export function createBuiltDistFilesFetcher(
