@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
-- ???
+### Added
+
+- Generates full PWA configs and assets to maximize webpage
+  support for browser and device features
 
 ## [v0.0.1] - 2025-10-10
 

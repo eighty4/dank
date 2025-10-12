@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 
-import { copyFile, mkdir, readdir, writeFile } from 'node:fs/promises'
+import {
+    copyFile,
+    mkdir,
+    readdir,
+    rename,
+    stat,
+    writeFile,
+} from 'node:fs/promises'
 import { join } from 'node:path'
 
 // fallbacks for npm packages if network error
@@ -109,8 +116,6 @@ const opts: CreateDankOpts = (function parseCreateOpts() {
     return result as CreateDankOpts
 })()
 
-const assetsDir = join(import.meta.dirname.replace(/lib_js$/, ''), 'assets')
-
 try {
     await mkdir(opts.outDir)
 } catch {
@@ -162,74 +167,34 @@ await Promise.all([
 `,
     ),
 
-    await writeFile(
-        join(
-            opts.outDir,
-            runtimeNativeTS() ? 'dank.config.ts' : 'dank.config.js',
-        ),
-        `\
-import { defineConfig } from '@eighty4/dank'
-
-export default defineConfig({
-    pages: {
-        '/': 'dank.html',
-    },
-})
-`,
-    ),
-
-    await writeFile(
-        join(opts.outDir, 'pages', 'dank.html'),
-        `\
-<!DOCTYPE html>
-<html>
-<head>
-<title>Dank 'n Eggs</title>
-<link rel="icon" type="image/svg+xml" href="/dank.svg" />
-<link rel="shortcut icon" href="/dank.ico" sizes="any" />
-<link rel="stylesheet" href="./dank.css"/>
-<script src="./dank.ts" type="module"></script>
-</head>
-<body>
-<h1>Your skillet is ready.</h1>
-</body>
-</html>
-`,
-    ),
-
-    await writeFile(
-        join(opts.outDir, 'pages', 'dank.ts'),
-        `\
-const greeting: string = 'hello'
-console.log(greeting, 'dankness')
-`,
-    ),
-
-    await writeFile(
-        join(opts.outDir, 'pages', 'dank.css'),
-        `\
-* {
-    margin: 0;
-    padding: 0;
-}
-
-h1 {
-    color: #111;
-    font-family: monospace;
-    font-size: 1.5rem;
-    margin-top: calc(50vh - 1rem);
-    text-align: center;
-}
-`,
-    ),
-
-    ...(await readdir(assetsDir)).map(copyAsset),
+    ...(await recursiveCopyAssets(
+        join(import.meta.dirname.replace(/lib_js$/, ''), 'assets'),
+    )),
 ])
 
-async function copyAsset(filename: string): Promise<void> {
-    const from = join(assetsDir, filename)
-    const to = join(opts.outDir, 'public', filename)
-    return await copyFile(from, to)
+if (runtimeNativeTS()) {
+    await rename(
+        join(opts.outDir, 'dank.config.js'),
+        join(opts.outDir, 'dank.config.ts'),
+    )
+}
+
+async function recursiveCopyAssets(
+    root: string,
+    subdir: string = '',
+): Promise<Array<Promise<void>>> {
+    const copying: Array<Promise<void>> = []
+    for (const pathname of await readdir(join(root, subdir))) {
+        const path = join(root, subdir, pathname)
+        if ((await stat(path)).isDirectory()) {
+            copying.push(
+                ...(await recursiveCopyAssets(root, join(subdir, pathname))),
+            )
+        } else {
+            copying.push(copyFile(path, join(opts.outDir, subdir, pathname)))
+        }
+    }
+    return copying
 }
 
 console.log(
