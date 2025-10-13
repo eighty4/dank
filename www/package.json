@@ -9,7 +9,7 @@
         "typecheck": "tsc"
     },
     "devDependencies": {
-        "@eighty4/dank": "workspace:*"
+        "@eighty4/dank": "0.0.3"
     },
     "dependencies": {
         "@fontsource/slackey": "^5.2.7"
