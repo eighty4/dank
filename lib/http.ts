@@ -85,7 +85,7 @@ export function createDevServeFilesFetcher(
     const proxyAddress = 'http://127.0.0.1:' + opts.proxyPort
     return (url: URL, _headers: Headers, res: ServerResponse) => {
         if (opts.pages[url.pathname]) {
-            streamFile(join(opts.pagesDir, url.pathname + 'index.html'), res)
+            streamFile(join(opts.pagesDir, url.pathname, 'index.html'), res)
         } else {
             const maybePublicPath = join(opts.publicDir, url.pathname)
             exists(join(opts.publicDir, url.pathname)).then(fromPublic => {

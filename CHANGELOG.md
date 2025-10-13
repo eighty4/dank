@@ -6,6 +6,10 @@
 
 - `dank serve --log-http` prints HTTP access logs during development
 
+### Fixed
+
+- Bugfix for webpage paths during `dank serve`
+
 ## [v0.0.2] - 2025-10-10
 
 ### Added
