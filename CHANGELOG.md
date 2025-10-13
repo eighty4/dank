@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- ???
+
+## [v0.0.3] - 2025-10-13
+
 ### Added
 
 - `dank serve --log-http` prints HTTP access logs during development
@@ -25,6 +29,7 @@
 - `dank.config.ts` configures api/web service commands that are started with `dank serve`
   using the `DankConfig['services']` field of `defineConfig`
 
-[Unreleased]: https://github.com/eighty4/dank/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/eighty4/dank/compare/v0.0.3...HEAD
+[v0.0.3]: https://github.com/eighty4/dank/compare/v0.0.2...v0.0.3
 [v0.0.2]: https://github.com/eighty4/dank/compare/v0.0.1...v0.0.2
 [v0.0.1]: https://github.com/eighty4/dank/releases/tag/v0.0.1
