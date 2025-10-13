@@ -12,7 +12,12 @@ body {
     min-height: 500vh;
 }
 
-#features-html, #features-reload, #features-bundler, #features-services, #diggity-dank, footer {
+#features-html,
+#features-reload,
+#features-bundler,
+#features-services,
+#diggity-dank,
+footer {
     min-height: 95vh;
     display: flex;
     flex-direction: column;
@@ -29,12 +34,12 @@ body {
         width: 3rem;
         aspect-ratio: 1/1;
         border: var(--b-thick);
-        border-radius: .5rem;
+        border-radius: 0.5rem;
 
         &.bacon {
             background: var(--c-bacon);
         }
-        
+
         &.green {
             background: var(--c-green);
         }
@@ -62,7 +67,6 @@ body {
         &.black {
             background: var(--c-black);
         }
-
     }
 }
 
