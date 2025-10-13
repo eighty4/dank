@@ -37,6 +37,16 @@ importers:
         specifier: ^5.9.2
         version: 5.9.2
 
+  www:
+    dependencies:
+      '@fontsource/slackey':
+        specifier: ^5.2.7
+        version: 5.2.7
+    devDependencies:
+      '@eighty4/dank':
+        specifier: workspace:*
+        version: link:..
+
 packages:
 
   '@esbuild/aix-ppc64@0.25.10':
@@ -195,6 +205,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@fontsource/slackey@5.2.7':
+    resolution: {integrity: sha512-Gj3b2s7i61PT8J4gWnfjPFy/cTbRQ/n+E4lHbtZwcKmWiozDsmTT+qdFY2n48i1hsvUP8A36hjEQ2q/lGfV3Zg==}
+
   '@types/node@24.5.2':
     resolution: {integrity: sha512-FYxk1I7wPv3K2XBaoyH2cTnocQEu8AOZ60hPbsyukMPLv5/5qr7V1i8PLHdl6Zf87I+xZXFvPCXYjiTFq+YSDQ==}
 
@@ -307,6 +320,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.25.10':
     optional: true
+
+  '@fontsource/slackey@5.2.7': {}
 
   '@types/node@24.5.2':
     dependencies:

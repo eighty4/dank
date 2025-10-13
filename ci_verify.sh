@@ -67,3 +67,9 @@ echo '\n*** create-dank: tsc ***'
 
 echo '\n*** create-dank: fmtcheck ***'
 (cd create-dank && pnpm fmtcheck)
+
+echo '\n*** www: tsc ***'
+(cd www && pnpm typecheck)
+
+echo '\n*** www: build ***'
+(cd www && pnpm build)
