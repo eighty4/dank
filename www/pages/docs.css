@@ -1,0 +1,7 @@
+@import './theme.css';
+
+body {
+    font-family: sans-serif;
+    background: var(--c-green);
+    min-height: 500vh;
+}

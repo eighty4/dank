@@ -1,0 +1,17 @@
+{
+    "name": "dank-n-eggs",
+    "version": "0.0.0",
+    "packageManager": "pnpm@10.18.2",
+    "type": "module",
+    "scripts": {
+        "build": "dank build",
+        "dev": "dank serve",
+        "typecheck": "tsc"
+    },
+    "devDependencies": {
+        "@eighty4/dank": "workspace:*"
+    },
+    "dependencies": {
+        "@fontsource/slackey": "^5.2.7"
+    }
+}

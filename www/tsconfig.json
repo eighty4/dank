@@ -1,0 +1,24 @@
+{
+    "compilerOptions": {
+        "rootDir": "..",
+        "target": "ESNext",
+        "module": "NodeNext",
+        "noEmit": true,
+        "composite": false,
+        "declaration": false,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+
+        "allowImportingTsExtensions": true,
+        "rewriteRelativeImportExtensions": true,
+
+        /* Linting */
+        "noFallthroughCasesInSwitch": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "strict": true,
+        "verbatimModuleSyntax": true
+    },
+    "include": ["./pages/**/*.ts", "../client/esbuild.ts"],
+    "exclude": ["node_modules"]
+}

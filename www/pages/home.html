@@ -1,0 +1,235 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Dank 'n Eggs</title>
+    <meta name="theme-color" content="#ffe" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="Dank 'n Eggs" />
+    <link rel="icon" type="image/svg+xml" href="/dank.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/dank-16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/dank-32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/dank-48.png" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/dank-64.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/dank-96.png" />
+    <link rel="manifest" href="/.webmanifest" />
+    <link rel="stylesheet" href="./home.css" />
+    <script src="./home.ts"></script>
+  </head>
+  <body>
+    <svg href="/asdf.svg"></svg>
+    <header>
+      <h1>
+        <span class="b">build</span>
+        <span class="d">DANK</span>
+        <span class="p">pages</span>
+      </h1>
+
+      <style>
+        #bacon {
+          margin: 3rem 0;
+          
+          display: flex;
+          flex-direction: row;
+          justify-content: center;
+          align-items: center;
+          gap: 10px;
+          .lb {
+            display: flex;
+            flex-direction: column;
+            width: 35px;
+            :nth-child(1) {
+              transform: rotate(30deg);
+            }
+            :nth-child(2) {
+              transform: rotate(-30deg);
+            }
+          }
+          .exc {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+          }
+          .dash {
+              transform: rotate(90deg);
+              width: 35px;
+          }
+          .text {
+            font-size: 30px;
+            padding: 0 10px;
+          }
+          .colon {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-evenly;
+          }
+          .rb {
+            display: flex;
+            flex-direction: column;
+            width: 35px;
+            :nth-child(1) {
+              transform: rotate(-30deg);
+            }
+            :nth-child(2) {
+              transform: rotate(30deg);
+            }
+          }
+        }
+      </style>
+
+      <div id="bacon">
+        <div class="lb">
+          <img src="/bacon.svg" height="50px"/>
+          <img src="/bacon.svg" height="50px"/>
+        </div>
+        <div class="exc">
+          <img src="/bacon.svg" height="60px"/>
+          <img src="/dank.svg" height="20px" width="20px"/>
+        </div>
+        <img class="dash" src="/bacon.svg" height="30px"/>
+        <img class="dash" src="/bacon.svg" height="30px"/>
+        <span class="text">made with</span>
+        <!-- <div class="colon">
+          <img src="/dank.svg" height="20px" width="20px"/>
+          <img src="/dank.svg" height="20px" width="20px"/>
+        </div> -->
+        <img class="dash" src="/bacon.svg" height="30px"/>
+        <img class="dash" src="/bacon.svg" height="30px"/>
+        <div class="rb">
+          <img src="/bacon.svg" height="50px"/>
+          <img src="/bacon.svg" height="50px"/>
+        </div>
+      </div>
+
+      <div id="getting-started">
+
+
+
+        <p>This page was made with:</p>
+        <div class="code">
+          <div class="package-managers">
+            <img
+              class="pm"
+              data-pm="bun"
+              src="/bun.svg"
+              alt="Bun"
+              height="50"
+              width="50"
+              draggable="false"
+            />
+            <svg
+              class="pm"
+              data-pm="npm"
+              width="50"
+              height="50"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <text
+                x="10"
+                y="30"
+                font-family="sans-serif"
+                font-size="20"
+                fill="white"
+              >
+                npm
+              </text>
+            </svg>
+            <img
+              class="pm show"
+              data-pm="pnpm"
+              src="/pnpm-light.svg"
+              alt="pnpm"
+              height="50"
+              width="50"
+              draggable="false"
+            />
+          </div>
+          <div class="commands">
+            <div class="command" data-pm="bun">
+              bun create dank --out-dir www
+            </div>
+            <div class="command" data-pm="npm">
+              npm create dank -- --out-dir www
+            </div>
+            <div class="command show" data-pm="pnpm">
+              pnpm create dank --out-dir www
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main>
+      <div id="features-html">
+        <h2>DANK is HTML first!</h2>
+        <ul>
+          <li>Bundler imports</li>
+          <li>Partials</li>
+          <li>Content hashes</li>
+          <li>100% native web tech - no IDE plugins or tooling versioning anarchy!</li>
+        </ul>
+      </div>
+      <div id="features-reload">
+        <div class="css">
+          <h2>CSS hot-reloads</h2>
+          <h3>Keep the vibe going</h3>
+        </div>
+        <div class="js">
+          <h2>JS rebundle notifications</h2>
+          <h4>(and not hot-reloads)</h4>
+        </div>
+        <style>
+          #features-css .preview .content {
+            p {
+              color: violet;
+            }
+          }
+        </style>
+        <div class="preview">
+          <div class="content">
+            <p>This is a &lt; p &gt; element.</p>
+          </div>
+        </div>
+        <div id="code-editor">
+          <div class="tabs">
+            <span>paragraph.css</span>
+            <span>paragraph.js</span>
+          </div>
+        </div>
+        <textarea id="css-editor">
+/* edit me */
+p {
+  color: violet;
+}</textarea
+        >
+      </div>
+      <div id="features-bundler">
+
+      </div>
+      <div id="features-services">
+
+      </div>
+      <div id="diggity-dank">
+        <h3>This is the</h3>
+        <h2>diggity dank</h2>
+        <h3>of modern web.</h3>
+        <p>It's HTML, JS, CSS & a best-in-class bundler.</p>
+      </div>
+    </main>
+    <footer>
+      <div id="palette">
+        <div class="swatch yeller"></div>
+        <div class="swatch offwhite"></div>
+        <div class="swatch white"></div>
+        <div class="swatch charcoal"></div>
+        <div class="swatch black"></div>
+        <div class="swatch green"></div>
+        <div class="swatch red"></div>
+        <div class="swatch bacon"></div>
+      </div>
+    </footer>
+  </body>
+</html>

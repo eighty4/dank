@@ -1,0 +1,18 @@
+:root {
+    --b-thin: solid 1px var(--c-black);
+    --b-medium: solid 2px var(--c-black);
+    --b-thick: solid 3px var(--c-black);
+    --c-bacon: linear-gradient(to right, #cc2f23, #e6a68f, #e85033);
+    --c-red: #e53;
+    --c-yellow: #fd5;
+    --c-green: #5e5;
+    --c-charcoal: #333;
+    --c-black: #111;
+    --c-white: #fff;
+    --c-offwhite: #ffe;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+}
