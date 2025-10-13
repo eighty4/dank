@@ -12,7 +12,7 @@ import { join } from 'node:path'
 
 // fallbacks for npm packages if network error
 const FALLBACKS: Record<string, string> = {
-    '@eighty4/dank': '0.0.2',
+    '@eighty4/dank': '0.0.3',
     npm: '11.6.2',
     pnpm: '10.18.2',
 }
