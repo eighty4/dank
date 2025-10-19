@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
-- ???
+### Added
+
+- Contents of HTML partials imported within HTML comments using a syntax
+  like: `<!-- {{ ./meta_tags.html }} -->` are inserted into webpages
 
 ## [v0.0.3] - 2025-10-13
 

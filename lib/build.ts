@@ -1,13 +1,13 @@
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createBuildTag } from './build_tag.ts'
 import type { DankConfig } from './dank.ts'
-import { isProductionBuild, willMinify } from './flags.ts'
-import { copyAssets } from './public.ts'
-import { createBuildTag } from './tag.ts'
-import { writeBuildManifest, writeMetafile } from './manifest.ts'
 import { type DefineDankGlobal, createGlobalDefinitions } from './define.ts'
-import { HtmlEntrypoint } from './html.ts'
 import { esbuildWebpages } from './esbuild.ts'
+import { isProductionBuild, willMinify } from './flags.ts'
+import { HtmlEntrypoint, HtmlHrefs } from './html.ts'
+import { writeBuildManifest, writeMetafile } from './manifest.ts'
+import { copyAssets } from './public.ts'
 
 export type DankBuild = {
     dir: string
@@ -30,11 +30,15 @@ export async function buildWebsite(c: DankConfig): Promise<DankBuild> {
     )
     await rm(buildDir, { recursive: true, force: true })
     await mkdir(distDir, { recursive: true })
+    for (const subdir of Object.keys(c.pages).filter(url => url !== '/')) {
+        await mkdir(join(distDir, subdir), { recursive: true })
+    }
     await mkdir(join(buildDir, 'metafiles'), { recursive: true })
     const staticAssets = await copyAssets(distDir)
-    const buildUrls: Array<string> = []
-    buildUrls.push(
-        ...(await buildWebpages(distDir, createGlobalDefinitions(), c.pages)),
+    const buildUrls: Array<string> = await buildWebpages(
+        distDir,
+        createGlobalDefinitions(),
+        c.pages,
     )
     if (staticAssets) {
         buildUrls.push(...staticAssets)
@@ -47,52 +51,51 @@ export async function buildWebsite(c: DankConfig): Promise<DankBuild> {
     }
 }
 
+// builds all webpage entrypoints in one esbuild.build context
+// to support code splitting
+// returns all built assets URLs and webpage URLs from DankConfig.pages
 async function buildWebpages(
     distDir: string,
     define: DefineDankGlobal,
     pages: Record<string, string>,
 ): Promise<Array<string>> {
-    const entryPointUrls: Set<string> = new Set()
-    const entryPoints: Array<{ in: string; out: string }> = []
-    const htmlEntrypoints: Array<HtmlEntrypoint> = await Promise.all(
-        Object.entries(pages).map(async ([urlPath, fsPath]) => {
-            const html = await HtmlEntrypoint.readFrom(
-                urlPath,
-                join('pages', fsPath),
-            )
-            await html.injectPartials()
-            if (urlPath !== '/') {
-                await mkdir(join(distDir, urlPath), { recursive: true })
-            }
-            html.collectScripts()
-                .filter(scriptImport => !entryPointUrls.has(scriptImport.in))
-                .forEach(scriptImport => {
-                    entryPointUrls.add(scriptImport.in)
-                    entryPoints.push({
-                        in: scriptImport.in,
-                        out: scriptImport.out,
-                    })
-                })
-            return html
-        }),
-    )
-    const metafile = await esbuildWebpages(define, entryPoints, distDir)
-    await writeMetafile(`pages.json`, metafile)
-    // todo these hrefs would have \ path separators on windows
-    const buildUrls = [...Object.keys(pages)]
-    const mapInToOutHrefs: Record<string, string> = {}
-    for (const [outputFile, { entryPoint }] of Object.entries(
-        metafile.outputs,
-    )) {
-        const outputUrl = outputFile.replace(/^build\/dist/, '')
-        buildUrls.push(outputUrl)
-        mapInToOutHrefs[entryPoint!] = outputUrl
+    // create HtmlEntrypoint for each webpage and collect awaitable esbuild entrypoints
+    const loadingEntryPoints: Array<
+        Promise<Array<{ in: string; out: string }>>
+    > = []
+    const htmlEntrypoints: Array<HtmlEntrypoint> = []
+    for (const [urlPath, fsPath] of Object.entries(pages)) {
+        const html = new HtmlEntrypoint(urlPath, fsPath)
+        loadingEntryPoints.push(new Promise(res => html.on('entrypoints', res)))
+        htmlEntrypoints.push(html)
     }
+
+    // collect esbuild entrypoints from every HtmlEntrypoint
+    const uniqueEntryPoints: Set<string> = new Set()
+    const buildEntryPoints: Array<{ in: string; out: string }> = []
+    for (const pageEntryPoints of await Promise.all(loadingEntryPoints)) {
+        for (const entryPoint of pageEntryPoints) {
+            if (!uniqueEntryPoints.has(entryPoint.in)) {
+                buildEntryPoints.push(entryPoint)
+            }
+        }
+    }
+
+    const metafile = await esbuildWebpages(define, buildEntryPoints, distDir)
+    await writeMetafile(`pages.json`, metafile)
+
+    // write out html output with rewritten hrefs
+    const hrefs = new HtmlHrefs()
+    hrefs.addEsbuildOutputs(metafile)
     await Promise.all(
         htmlEntrypoints.map(async html => {
-            html.rewriteHrefs(mapInToOutHrefs)
-            await html.writeTo(distDir)
+            await writeFile(
+                join(distDir, html.url, 'index.html'),
+                html.output(hrefs),
+            )
         }),
     )
-    return buildUrls
+
+    // return website urls of webpages and assets
+    return [...Object.keys(pages), ...hrefs.buildOutputUrls]
 }

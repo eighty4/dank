@@ -37,7 +37,7 @@ export async function esbuildDevContext(
     return await esbuild.context({
         define,
         entryNames: '[dir]/[name]',
-        entryPoints: removeEntryPointOutExt(entryPoints),
+        entryPoints: mapEntryPointPaths(entryPoints),
         outdir,
         ...webpageBuildOptions,
         metafile: false,
@@ -53,7 +53,7 @@ export async function esbuildWebpages(
     const buildResult = await esbuild.build({
         define,
         entryNames: '[dir]/[name]-[hash]',
-        entryPoints: removeEntryPointOutExt(entryPoints),
+        entryPoints: mapEntryPointPaths(entryPoints),
         outdir,
         ...webpageBuildOptions,
     })
@@ -63,10 +63,7 @@ export async function esbuildWebpages(
 
 // esbuild will append the .js or .css to output filenames
 // keeping extension on entryPoints data for consistency
-// and removing and mapping entryPoints to pass to esbuild
-function removeEntryPointOutExt(
-    entryPoints: Array<{ in: string; out: string }>,
-) {
+function mapEntryPointPaths(entryPoints: Array<{ in: string; out: string }>) {
     return entryPoints.map(entryPoint => {
         return {
             in: entryPoint.in,

@@ -1,4 +1,10 @@
-import { mkdir, readFile, rm, watch as _watch } from 'node:fs/promises'
+import {
+    mkdir,
+    readFile,
+    rm,
+    watch as _watch,
+    writeFile,
+} from 'node:fs/promises'
 import { extname, join, resolve } from 'node:path'
 import type { BuildContext } from 'esbuild'
 import { buildWebsite } from './build.ts'
@@ -41,15 +47,29 @@ async function startPreviewMode(c: DankConfig) {
     console.log(`preview is live at http://127.0.0.1:${PORT}`)
 }
 
+type BuildContextState =
+    | BuildContext
+    | 'starting'
+    | 'dirty'
+    | 'disposing'
+    | 'preparing'
+    | null
+
 // todo changing partials triggers update on html pages
 async function startDevMode(c: DankConfig, signal: AbortSignal) {
     const watchDir = join('build', 'watch')
     await mkdir(watchDir, { recursive: true })
     const clientJS = await loadClientJS()
-    const pagesByUrlPath: Record<string, WebpageMetadata> = {}
-    const entryPointsByUrlPath: Record<string, Set<string>> = {}
-    let buildContext: BuildContext | 'starting' | 'dirty' | 'disposing' | null =
-        null
+    const pagesByUrlPath: Record<string, HtmlEntrypoint> = {}
+    const partialsByUrlPath: Record<string, Array<string>> = {}
+    const entryPointsByUrlPath: Record<
+        string,
+        {
+            entrypoints: Array<{ in: string; out: string }>
+            pathsIn: Set<string>
+        }
+    > = {}
+    let buildContext: BuildContextState = 'preparing'
 
     watch('dank.config.ts', signal, async () => {
         let updated: DankConfig
@@ -62,13 +82,13 @@ async function startDevMode(c: DankConfig, signal: AbortSignal) {
         await Promise.all(
             Object.entries(updated.pages).map(async ([urlPath, srcPath]) => {
                 c.pages[urlPath as `/${string}`] = srcPath
-                if (pagesByUrlPath[urlPath]) {
+                if (!pagesByUrlPath[urlPath]) {
+                    await addPage(urlPath, srcPath)
+                } else {
                     prevPages.delete(urlPath)
-                    if (pagesByUrlPath[urlPath].srcPath !== srcPath) {
+                    if (pagesByUrlPath[urlPath].fsPath !== srcPath) {
                         await updatePage(urlPath)
                     }
-                } else {
-                    await addPage(urlPath, srcPath)
                 }
             }),
         )
@@ -86,73 +106,91 @@ async function startDevMode(c: DankConfig, signal: AbortSignal) {
                     updatePage(urlPath)
                 }
             }
+            for (const [urlPath, partials] of Object.entries(
+                partialsByUrlPath,
+            )) {
+                if (partials.includes(filename)) {
+                    updatePage(urlPath, filename)
+                }
+            }
         }
     })
 
     await Promise.all(
-        Object.entries(c.pages).map(([urlPath, srcPath]) =>
-            addPage(urlPath, srcPath),
-        ),
+        Object.entries(c.pages).map(async ([urlPath, srcPath]) => {
+            await addPage(urlPath, srcPath)
+            return new Promise(res =>
+                pagesByUrlPath[urlPath].once('entrypoints', res),
+            )
+        }),
     )
 
     async function addPage(urlPath: string, srcPath: string) {
-        const metadata = await processWebpage({
-            clientJS,
-            outDir: watchDir,
-            pagesDir: 'pages',
-            srcPath,
+        await mkdir(join(watchDir, urlPath), { recursive: true })
+        const htmlEntrypoint = (pagesByUrlPath[urlPath] = new HtmlEntrypoint(
             urlPath,
+            srcPath,
+            [{ type: 'script', js: clientJS }],
+        ))
+        htmlEntrypoint.on('entrypoints', entrypoints => {
+            const pathsIn = new Set(entrypoints.map(e => e.in))
+            if (
+                !entryPointsByUrlPath[urlPath] ||
+                !matchingEntrypoints(
+                    entryPointsByUrlPath[urlPath].pathsIn,
+                    pathsIn,
+                )
+            ) {
+                entryPointsByUrlPath[urlPath] = { entrypoints, pathsIn }
+                resetBuildContext()
+            }
         })
-        pagesByUrlPath[urlPath] = metadata
-        entryPointsByUrlPath[urlPath] = new Set(
-            metadata.entryPoints.map(e => e.in),
+        htmlEntrypoint.on('partial', partial => {
+            if (!partialsByUrlPath[urlPath]) {
+                partialsByUrlPath[urlPath] = []
+            }
+            partialsByUrlPath[urlPath].push(partial)
+        })
+        htmlEntrypoint.on(
+            'partials',
+            partials => (partialsByUrlPath[urlPath] = partials),
         )
-        if (buildContext !== null) {
-            resetBuildContext()
-        }
+        htmlEntrypoint.on('output', html =>
+            writeFile(join(watchDir, urlPath, 'index.html'), html),
+        )
     }
 
     function deletePage(urlPath: string) {
+        pagesByUrlPath[urlPath].removeAllListeners()
         delete pagesByUrlPath[urlPath]
         delete entryPointsByUrlPath[urlPath]
         resetBuildContext()
     }
 
-    async function updatePage(urlPath: string) {
-        const update = await processWebpage({
-            clientJS,
-            outDir: watchDir,
-            pagesDir: 'pages',
-            srcPath: c.pages[urlPath as `/${string}`],
-            urlPath,
-        })
-        const entryPointUrls = new Set(update.entryPoints.map(e => e.in))
-        if (!hasSameValues(entryPointUrls, entryPointsByUrlPath[urlPath])) {
-            entryPointsByUrlPath[urlPath] = entryPointUrls
-            resetBuildContext()
-        }
+    async function updatePage(urlPath: string, partial?: string) {
+        pagesByUrlPath[urlPath].emit('change', partial)
     }
 
     function collectEntrypoints(): Array<{ in: string; out: string }> {
-        const sources: Set<string> = new Set()
-        return Object.values(pagesByUrlPath)
-            .flatMap(({ entryPoints }) => entryPoints)
+        const unique: Set<string> = new Set()
+        return Object.values(entryPointsByUrlPath)
+            .flatMap(entrypointState => entrypointState.entrypoints)
             .filter(entryPoint => {
-                if (sources.has(entryPoint.in)) {
+                if (unique.has(entryPoint.in)) {
                     return false
                 } else {
-                    sources.add(entryPoint.in)
+                    unique.add(entryPoint.in)
                     return true
                 }
             })
     }
 
     function resetBuildContext() {
-        if (buildContext === 'starting' || buildContext === 'dirty') {
-            buildContext = 'dirty'
+        if (buildContext === 'preparing' || buildContext === 'disposing') {
             return
         }
-        if (buildContext === 'disposing') {
+        if (buildContext === 'starting' || buildContext === 'dirty') {
+            buildContext = 'dirty'
             return
         }
         if (buildContext !== null) {
@@ -174,6 +212,17 @@ async function startDevMode(c: DankConfig, signal: AbortSignal) {
         }
     }
 
+    // function removePartialFromPage(partial: string, urlPath: string) {
+    //     const deleteIndex = urlPathsByPartials[partial].indexOf(urlPath)
+    //     if (deleteIndex !== -1) {
+    //         if (urlPathsByPartials[partial].length === 1) {
+    //             delete urlPathsByPartials[partial]
+    //         } else {
+    //             urlPathsByPartials[partial].splice(deleteIndex, 1)
+    //         }
+    //     }
+    // }
+
     buildContext = await startEsbuildWatch(collectEntrypoints())
     const frontend = createDevServeFilesFetcher({
         pages: c.pages,
@@ -186,7 +235,7 @@ async function startDevMode(c: DankConfig, signal: AbortSignal) {
     startDevServices(c, signal)
 }
 
-function hasSameValues(a: Set<string>, b: Set<string>): boolean {
+function matchingEntrypoints(a: Set<string>, b: Set<string>): boolean {
     if (a.size !== b.size) {
         return false
     }
@@ -196,46 +245,6 @@ function hasSameValues(a: Set<string>, b: Set<string>): boolean {
         }
     }
     return true
-}
-
-type WebpageInputs = {
-    clientJS: string
-    outDir: string
-    pagesDir: string
-    srcPath: string
-    urlPath: string
-}
-
-type WebpageMetadata = {
-    entryPoints: Array<{ in: string; out: string }>
-    srcPath: string
-    urlPath: string
-}
-
-async function processWebpage(inputs: WebpageInputs): Promise<WebpageMetadata> {
-    const html = await HtmlEntrypoint.readFrom(
-        inputs.urlPath,
-        join(inputs.pagesDir, inputs.srcPath),
-    )
-    await html.injectPartials()
-    if (inputs.urlPath !== '/') {
-        await mkdir(join(inputs.outDir, inputs.urlPath), { recursive: true })
-    }
-    const entryPoints: Array<{ in: string; out: string }> = []
-    html.collectScripts().forEach(scriptImport => {
-        entryPoints.push({
-            in: scriptImport.in,
-            out: scriptImport.out,
-        })
-    })
-    html.rewriteHrefs()
-    html.appendScript(inputs.clientJS)
-    await html.writeTo(inputs.outDir)
-    return {
-        entryPoints,
-        srcPath: inputs.srcPath,
-        urlPath: inputs.urlPath,
-    }
 }
 
 async function startEsbuildWatch(
