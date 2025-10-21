@@ -6,6 +6,8 @@
 
 - Contents of HTML partials imported within HTML comments using a syntax
   like: `<!-- {{ ./meta_tags.html }} -->` are inserted into webpages
+- `dank.config.ts` configures dev services with an HTTP port for proxying
+  HTTP requests to backend APIs and services during development
 
 ## [v0.0.3] - 2025-10-13
 

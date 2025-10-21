@@ -3,6 +3,7 @@
         "outDir": "lib_js",
         "rootDir": "lib",
 
+        "lib": ["ESNext"],
         "target": "ESNext",
         "module": "NodeNext",
         "composite": false,

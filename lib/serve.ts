@@ -31,19 +31,21 @@ const ESBUILD_PORT = 2999
 
 export async function serveWebsite(c: DankConfig): Promise<never> {
     await rm('build', { force: true, recursive: true })
+    const abortController = new AbortController()
+    process.once('exit', () => abortController.abort())
     if (isPreview) {
-        await startPreviewMode(c)
+        await startPreviewMode(c, abortController.signal)
     } else {
-        const abortController = new AbortController()
         await startDevMode(c, abortController.signal)
     }
     return new Promise(() => {})
 }
 
-async function startPreviewMode(c: DankConfig) {
+async function startPreviewMode(c: DankConfig, signal: AbortSignal) {
     const { dir, files } = await buildWebsite(c)
     const frontend = createBuiltDistFilesFetcher(dir, files)
-    createWebServer(PORT, frontend).listen(PORT)
+    const devServices = startDevServices(c, signal)
+    createWebServer(PORT, frontend, devServices.http).listen(PORT)
     console.log(`preview is live at http://127.0.0.1:${PORT}`)
 }
 
@@ -230,9 +232,9 @@ async function startDevMode(c: DankConfig, signal: AbortSignal) {
         proxyPort: ESBUILD_PORT,
         publicDir: 'public',
     })
-    createWebServer(PORT, frontend).listen(PORT)
+    const devServices = startDevServices(c, signal)
+    createWebServer(PORT, frontend, devServices.http).listen(PORT)
     console.log(`dev server is live at http://127.0.0.1:${PORT}`)
-    startDevServices(c, signal)
 }
 
 function matchingEntrypoints(a: Set<string>, b: Set<string>): boolean {

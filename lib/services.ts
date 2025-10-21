@@ -2,6 +2,16 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import { basename, isAbsolute, resolve } from 'node:path'
 import type { DankConfig, DevService } from './dank.ts'
 
+export type DevServices = {
+    http: HttpServices
+}
+
+export type HttpServices = {
+    running: Array<HttpService>
+}
+
+export type HttpService = NonNullable<DevService['http']>
+
 // up to date representation of dank.config.ts services
 const running: Array<{ s: DevService; process: ChildProcess | null }> = []
 
@@ -13,12 +23,22 @@ let updating: null | {
     starting: Array<DevService>
 } = null
 
-export function startDevServices(c: DankConfig, _signal: AbortSignal) {
+export function startDevServices(
+    c: DankConfig,
+    _signal: AbortSignal,
+): DevServices {
     signal = _signal
     if (c.services?.length) {
         for (const s of c.services) {
             running.push({ s, process: startService(s) })
         }
+    }
+    return {
+        http: {
+            get running(): Array<NonNullable<DevService['http']>> {
+                return running.map(({ s }) => s.http).filter(http => !!http)
+            },
+        },
     }
 }
 
@@ -138,9 +158,13 @@ function startService(s: DevService): ChildProcess {
     spawned.stderr.on('data', chunk => printChunk(stderrLabel, chunk))
 
     spawned.on('error', e => {
-        const cause =
-            'code' in e && e.code === 'ENOENT' ? 'program not found' : e.message
-        opPrint(s, 'error: ' + cause)
+        if (e.name !== 'AbortError') {
+            const cause =
+                'code' in e && e.code === 'ENOENT'
+                    ? 'program not found'
+                    : e.message
+            opPrint(s, 'error: ' + cause)
+        }
         removeFromRunning(s)
     })
 

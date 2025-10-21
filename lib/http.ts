@@ -8,18 +8,22 @@ import {
     type ServerResponse,
 } from 'node:http'
 import { extname, join } from 'node:path'
+import { Readable } from 'node:stream'
 import mime from 'mime'
 import { isLogHttp } from './flags.ts'
+import type { HttpServices } from './services.ts'
 
 export type FrontendFetcher = (
     url: URL,
     headers: Headers,
     res: ServerResponse,
+    notFound: () => void,
 ) => void
 
 export function createWebServer(
     port: number,
     frontendFetcher: FrontendFetcher,
+    httpServices: HttpServices,
 ): ReturnType<typeof createServer> {
     const serverAddress = 'http://localhost:' + port
     const handler = (req: IncomingMessage, res: ServerResponse) => {
@@ -27,15 +31,81 @@ export function createWebServer(
             res.end()
         } else {
             const url = new URL(serverAddress + req.url)
-            if (req.method !== 'GET') {
-                res.writeHead(405)
-                res.end()
-            } else {
-                frontendFetcher(url, convertHeadersToFetch(req.headers), res)
-            }
+            const headers = convertHeadersToFetch(req.headers)
+            frontendFetcher(url, headers, res, () => {
+                collectReqBody(req).then(body =>
+                    tryHttpServices(
+                        req.method!,
+                        url,
+                        headers,
+                        body,
+                        httpServices,
+                    ).then(fetchResponse => {
+                        if (fetchResponse === null) {
+                            res.writeHead(404)
+                            res.end()
+                        } else {
+                            res.writeHead(
+                                fetchResponse.status,
+                                undefined,
+                                convertHeadersFromFetch(fetchResponse.headers),
+                            )
+                            if (fetchResponse.body) {
+                                Readable.fromWeb(fetchResponse.body).pipe(res)
+                            } else {
+                                res.end()
+                            }
+                        }
+                    }),
+                )
+            })
         }
     }
     return createServer(isLogHttp() ? createLogWrapper(handler) : handler)
+}
+
+function collectReqBody(req: IncomingMessage): Promise<string | null> {
+    let body = ''
+    req.on('data', data => (body += data.toString()))
+    return new Promise(res =>
+        req.on('end', () => res(body.length ? body : null)),
+    )
+}
+
+async function tryHttpServices(
+    method: string,
+    url: URL,
+    headers: Headers,
+    body: string | null,
+    httpServices: HttpServices,
+): Promise<Response | null> {
+    const { running } = httpServices
+    for (const httpService of running) {
+        const proxyUrl = new URL(url)
+        proxyUrl.port = `${httpService.port}`
+        try {
+            const response = await retryFetchWithTimeout(proxyUrl, {
+                body,
+                headers,
+                method,
+                redirect: 'manual',
+            })
+            if (response.status === 404 || response.status === 405) {
+                continue
+            } else {
+                return response
+            }
+        } catch (e: any) {
+            if (e === 'retrytimeout') {
+                continue
+            } else {
+                errorExit(
+                    `unexpected error http proxying to port ${httpService.port}: ${e.message}`,
+                )
+            }
+        }
+    }
+    return null
 }
 
 type RequestListener = (req: IncomingMessage, res: ServerResponse) => void
@@ -53,10 +123,14 @@ export function createBuiltDistFilesFetcher(
     dir: string,
     files: Set<string>,
 ): FrontendFetcher {
-    return (url: URL, _headers: Headers, res: ServerResponse) => {
+    return (
+        url: URL,
+        _headers: Headers,
+        res: ServerResponse,
+        notFound: () => void,
+    ) => {
         if (!files.has(url.pathname)) {
-            res.writeHead(404)
-            res.end()
+            notFound()
         } else {
             const p =
                 extname(url.pathname) === ''
@@ -83,7 +157,12 @@ export function createDevServeFilesFetcher(
     opts: DevServeOpts,
 ): FrontendFetcher {
     const proxyAddress = 'http://127.0.0.1:' + opts.proxyPort
-    return (url: URL, _headers: Headers, res: ServerResponse) => {
+    return (
+        url: URL,
+        _headers: Headers,
+        res: ServerResponse,
+        notFound: () => void,
+    ) => {
         if (opts.pages[url.pathname]) {
             streamFile(join(opts.pagesDir, url.pathname, 'index.html'), res)
         } else {
@@ -94,14 +173,22 @@ export function createDevServeFilesFetcher(
                 } else {
                     retryFetchWithTimeout(proxyAddress + url.pathname)
                         .then(fetchResponse => {
-                            res.writeHead(
-                                fetchResponse.status,
-                                convertHeadersFromFetch(fetchResponse.headers),
-                            )
-                            fetchResponse.bytes().then(data => res.end(data))
+                            if (fetchResponse.status === 404) {
+                                notFound()
+                            } else {
+                                res.writeHead(
+                                    fetchResponse.status,
+                                    convertHeadersFromFetch(
+                                        fetchResponse.headers,
+                                    ),
+                                )
+                                fetchResponse
+                                    .bytes()
+                                    .then(data => res.end(data))
+                            }
                         })
                         .catch(e => {
-                            if (e === 'retrytimeout') {
+                            if (isFetchRetryTimeout(e)) {
                                 res.writeHead(504)
                             } else {
                                 console.error(
@@ -121,11 +208,14 @@ export function createDevServeFilesFetcher(
 const PROXY_FETCH_RETRY_INTERVAL = 27
 const PROXY_FETCH_RETRY_TIMEOUT = 1000
 
-async function retryFetchWithTimeout(url: string): Promise<Response> {
+async function retryFetchWithTimeout(
+    url: URL | string,
+    requestInit?: RequestInit,
+): Promise<Response> {
     let timeout = Date.now() + PROXY_FETCH_RETRY_TIMEOUT
     while (true) {
         try {
-            return await fetch(url)
+            return await fetch(url, requestInit)
         } catch (e: any) {
             if (isNodeFailedFetch(e) || isBunFailedFetch(e)) {
                 if (timeout < Date.now()) {
@@ -140,6 +230,10 @@ async function retryFetchWithTimeout(url: string): Promise<Response> {
             }
         }
     }
+}
+
+function isFetchRetryTimeout(e: any): boolean {
+    return e === 'retrytimeout'
 }
 
 function isBunFailedFetch(e: any): boolean {
@@ -188,4 +282,9 @@ function convertHeadersToFetch(from: IncomingHttpHeaders): Headers {
         }
     }
     return to
+}
+
+function errorExit(msg: string): never {
+    console.log(`\u001b[31merror:\u001b[0m`, msg)
+    process.exit(1)
 }

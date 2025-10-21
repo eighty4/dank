@@ -11,6 +11,9 @@ export type DevService = {
     command: string
     cwd?: string
     env?: Record<string, string>
+    http?: {
+        port: number
+    }
 }
 
 export async function defineConfig(
