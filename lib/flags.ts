@@ -1,3 +1,26 @@
+// `dank serve` override for dank port
+export function dankPort(): number | undefined {
+    if (process.env.DANK_PORT?.length) {
+        return parsePortEnvVar('DANK_PORT')
+    }
+}
+
+// `dank serve` override for esbuild port
+export function esbuildPort(): number | undefined {
+    if (process.env.ESBUILD_PORT?.length) {
+        return parsePortEnvVar('ESBUILD_PORT')
+    }
+}
+
+function parsePortEnvVar(name: string): number {
+    const port = parseInt(process.env[name]!, 10)
+    if (isNaN(port)) {
+        throw Error(`env var ${name}=${port} must be a valid port number`)
+    } else {
+        return port
+    }
+}
+
 // `dank serve` will print http access logs to console
 export const isLogHttp = () =>
     process.env.LOG_HTTP === 'true' || process.argv.includes('--log-http')

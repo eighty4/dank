@@ -8,6 +8,8 @@
   like: `<!-- {{ ./meta_tags.html }} -->` are inserted into webpages
 - `dank.config.ts` configures dev services with an HTTP port for proxying
   HTTP requests to backend APIs and services during development
+- Environment variables `DANK_PORT` and `ESBUILD_PORT` customize
+  HTTP ports used during `dank serve`
 
 ## [v0.0.3] - 2025-10-13
 

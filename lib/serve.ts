@@ -12,7 +12,7 @@ import { loadConfig } from './config.ts'
 import type { DankConfig } from './dank.ts'
 import { createGlobalDefinitions } from './define.ts'
 import { esbuildDevContext } from './esbuild.ts'
-import { isPreviewBuild } from './flags.ts'
+import { dankPort, esbuildPort, isPreviewBuild } from './flags.ts'
 import { HtmlEntrypoint } from './html.ts'
 import {
     createBuiltDistFilesFetcher,
@@ -24,10 +24,10 @@ import { startDevServices, updateDevServices } from './services.ts'
 const isPreview = isPreviewBuild()
 
 // alternate port for --preview bc of service worker
-const PORT = isPreview ? 4000 : 3000
+const PORT = dankPort() || (isPreview ? 4000 : 3000)
 
 // port for esbuild.serve
-const ESBUILD_PORT = 2999
+const ESBUILD_PORT = esbuildPort() || 3995
 
 export async function serveWebsite(c: DankConfig): Promise<never> {
     await rm('build', { force: true, recursive: true })
@@ -272,10 +272,11 @@ async function startEsbuildWatch(
 }
 
 async function loadClientJS() {
-    return await readFile(
+    const clientJS = await readFile(
         resolve(import.meta.dirname, join('..', 'client', 'esbuild.js')),
         'utf-8',
     )
+    return clientJS.replace('3995', `${ESBUILD_PORT}`)
 }
 
 async function watch(

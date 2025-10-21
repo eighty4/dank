@@ -1,14 +1,16 @@
-type EsbuildEvent = {
-    added: Array<any>
+export type EsbuildEvent = {
+    added: Array<string>
     updated: Array<any>
     removed: Array<string>
 }
 
-new EventSource('http://127.0.0.1:2999/esbuild').addEventListener(
+new EventSource('http://127.0.0.1:3995/esbuild').addEventListener(
     'change',
     (e: MessageEvent) => {
-        const change: EsbuildEvent = JSON.parse(e.data)
-        const cssUpdates = change.updated.filter(p => p.endsWith('.css'))
+        const { updated }: EsbuildEvent = JSON.parse(e.data)
+        const changes: Set<string> = new Set()
+        for (const c of updated) changes.add(c)
+        const cssUpdates = Array.from(changes).filter(p => p.endsWith('.css'))
         if (cssUpdates.length) {
             console.log('esbuild css updates', cssUpdates)
             const cssLinks: Record<string, HTMLLinkElement> = {}
@@ -35,8 +37,10 @@ new EventSource('http://127.0.0.1:2999/esbuild').addEventListener(
                 addCssUpdateIndicator()
             }
         }
-        if (cssUpdates.length < change.updated.length) {
-            const jsUpdates = change.updated.filter(p => !p.endsWith('.css'))
+        if (cssUpdates.length < changes.size) {
+            const jsUpdates = Array.from(changes).filter(
+                p => !p.endsWith('.css'),
+            )
             const jsScripts: Set<string> = new Set()
             for (const elem of document.getElementsByTagName('script')) {
                 if (elem.src.length) {
