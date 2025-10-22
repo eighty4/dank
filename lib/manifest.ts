@@ -1,5 +1,6 @@
 import { writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
+import type { DankBuild } from './flags.ts'
 
 // catalog of build's filesystem output
 export type BuildManifest = {
@@ -14,8 +15,12 @@ export type CacheManifest = {
     files: Array<string>
 }
 
-export async function writeBuildManifest(buildTag: string, files: Set<string>) {
-    await writeJsonToBuildDir('manifest.json', {
+export async function writeBuildManifest(
+    build: DankBuild,
+    buildTag: string,
+    files: Set<string>,
+) {
+    await writeJsonToBuildDir(build, 'manifest.json', {
         buildTag,
         files: Array.from(files).map(f =>
             extname(f).length
@@ -28,21 +33,34 @@ export async function writeBuildManifest(buildTag: string, files: Set<string>) {
 }
 
 export async function writeJsonToBuildDir(
+    build: DankBuild,
     filename: `${string}.json`,
     json: any,
 ) {
-    await writeFile(join('./build', filename), JSON.stringify(json, null, 4))
+    await writeFile(
+        join(build.dirs.buildRoot, filename),
+        JSON.stringify(json, null, 4),
+    )
 }
 
-export async function writeMetafile(filename: `${string}.json`, json: any) {
+export async function writeMetafile(
+    build: DankBuild,
+    filename: `${string}.json`,
+    json: any,
+) {
     await writeJsonToBuildDir(
+        build,
         join('metafiles', filename) as `${string}.json`,
         json,
     )
 }
 
-export async function writeCacheManifest(buildTag: string, files: Set<string>) {
-    await writeJsonToBuildDir('cache.json', {
+export async function writeCacheManifest(
+    build: DankBuild,
+    buildTag: string,
+    files: Set<string>,
+) {
+    await writeJsonToBuildDir(build, 'cache.json', {
         apiRoutes: [],
         buildTag,
         files: Array.from(files).map(filenameToWebappPath),

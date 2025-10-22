@@ -1,15 +1,107 @@
-// `dank serve` override for dank port
-export function dankPort(): number | undefined {
-    if (process.env.DANK_PORT?.length) {
-        return parsePortEnvVar('DANK_PORT')
+import { join, resolve } from 'node:path'
+import type { DankConfig } from './dank.ts'
+
+export type DankBuild = {
+    dirs: ProjectDirs
+    minify: boolean
+    production: boolean
+}
+
+type ProjectDirs = {
+    buildRoot: string
+    buildWatch: string
+    buildDist: string
+    pages: string
+    pagesResolved: string
+    public: string
+}
+
+export function resolveBuildFlags(): DankBuild {
+    const flags: DankBuild = {
+        dirs: projectDirs(),
+        minify: willMinify(),
+        production: isProductionBuild(),
+    }
+    return {
+        get dirs(): ProjectDirs {
+            return flags.dirs
+        },
+        get minify(): boolean {
+            return flags.minify
+        },
+        get production(): boolean {
+            return flags.production
+        },
     }
 }
 
-// `dank serve` override for esbuild port
-export function esbuildPort(): number | undefined {
+export type DankServe = DankBuild & {
+    dankPort: number
+    esbuildPort: number
+    logHttp: boolean
+    preview: boolean
+}
+
+export function resolveServeFlags(c: DankConfig): DankServe {
+    const preview = isPreviewBuild()
+    const flags: DankServe = {
+        dirs: projectDirs(),
+        dankPort: dankPort(c, preview),
+        esbuildPort: esbuildPort(c),
+        logHttp: willLogHttp(),
+        minify: willMinify(),
+        preview,
+        production: isProductionBuild(),
+    }
+    return {
+        get dirs(): ProjectDirs {
+            return flags.dirs
+        },
+        get dankPort(): number {
+            return flags.dankPort
+        },
+        get esbuildPort(): number {
+            return flags.esbuildPort
+        },
+        get logHttp(): boolean {
+            return flags.logHttp
+        },
+        get minify(): boolean {
+            return flags.minify
+        },
+        get preview(): boolean {
+            return flags.preview
+        },
+        get production(): boolean {
+            return flags.production
+        },
+    }
+}
+
+// `dank serve` will pre-bundle and use service worker
+const isPreviewBuild = () =>
+    process.env.PREVIEW === 'true' || process.argv.includes('--preview')
+
+// `dank build` will minify sources and append git release tag to build tag
+// `dank serve` will pre-bundle with service worker and minify
+const isProductionBuild = () =>
+    process.env.PRODUCTION === 'true' || process.argv.includes('--production')
+
+// `dank serve` dank port for frontend webserver
+// alternate --preview port for service worker builds
+function dankPort(c: DankConfig, preview: boolean): number {
+    if (process.env.DANK_PORT?.length) {
+        return parsePortEnvVar('DANK_PORT')
+    }
+    return preview ? c.previewPort || c.port || 4000 : c.port || 3000
+}
+
+// `dank serve` esbuild port for bundler integration
+function esbuildPort(c: DankConfig): number {
     if (process.env.ESBUILD_PORT?.length) {
         return parsePortEnvVar('ESBUILD_PORT')
     }
+    return c.esbuild?.port || 3995
 }
 
 function parsePortEnvVar(name: string): number {
@@ -21,25 +113,42 @@ function parsePortEnvVar(name: string): number {
     }
 }
 
-// `dank serve` will print http access logs to console
-export const isLogHttp = () =>
-    process.env.LOG_HTTP === 'true' || process.argv.includes('--log-http')
+function projectDirs(): ProjectDirs {
+    const dirs: ProjectDirs = {
+        buildRoot: 'build',
+        buildDist: join('build', 'dist'),
+        buildWatch: join('build', 'watch'),
+        pages: 'pages',
+        pagesResolved: resolve('pages'),
+        public: 'public',
+    }
+    return {
+        get buildRoot(): string {
+            return dirs.buildRoot
+        },
+        get buildDist(): string {
+            return dirs.buildDist
+        },
+        get buildWatch(): string {
+            return dirs.buildWatch
+        },
+        get pages(): string {
+            return dirs.pages
+        },
+        get pagesResolved(): string {
+            return dirs.pagesResolved
+        },
+        get public(): string {
+            return dirs.public
+        },
+    }
+}
 
-// `dank serve` will pre-bundle and use service worker
-export const isPreviewBuild = () =>
-    process.env.PREVIEW === 'true' || process.argv.includes('--preview')
-
-// `dank build` will minify sources and append git release tag to build tag
-// `dank serve` will pre-bundle with service worker and minify
-export const isProductionBuild = () =>
-    process.env.PRODUCTION === 'true' || process.argv.includes('--production')
-
-export const willMinify = () =>
+const willMinify = () =>
     isProductionBuild() ||
     process.env.MINIFY === 'true' ||
     process.argv.includes('--minify')
 
-export const willTsc = () =>
-    isProductionBuild() ||
-    process.env.TSC === 'true' ||
-    process.argv.includes('--tsc')
+// `dank serve` will print http access logs to console
+const willLogHttp = () =>
+    process.env.LOG_HTTP === 'true' || process.argv.includes('--log-http')

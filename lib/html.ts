@@ -10,7 +10,7 @@ import {
     parseFragment,
     serialize,
 } from 'parse5'
-import { isProductionBuild } from './flags.ts'
+import type { DankBuild } from './flags.ts'
 
 type CommentNode = DefaultTreeAdapterTypes.CommentNode
 type Document = DefaultTreeAdapterTypes.Document
@@ -98,9 +98,8 @@ export type HtmlEntrypointEvents = {
     partials: [partials: Array<string>]
 }
 
-const isProd = isProductionBuild()
-
 export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
+    #build: DankBuild
     #decorations?: Array<HtmlDecoration>
     #document: Document = defaultTreeAdapter.createDocument()
     // #entrypoints: Set<string> = new Set()
@@ -111,11 +110,13 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
     #url: string
 
     constructor(
+        build: DankBuild,
         url: string,
         fsPath: string,
         decorations?: Array<HtmlDecoration>,
     ) {
         super({ captureRejections: true })
+        this.#build = build
         this.#decorations = decorations
         this.#url = url
         this.#fsPath = fsPath
@@ -133,7 +134,10 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
 
     async #html(): Promise<string> {
         try {
-            return await readFile(join('pages', this.#fsPath), 'utf-8')
+            return await readFile(
+                join(this.#build.dirs.pages, this.#fsPath),
+                'utf-8',
+            )
         } catch (e) {
             // todo error handling
             errorExit(this.#fsPath + ' does not exist')
@@ -184,7 +188,10 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         return await Promise.all(
             partials.map(async p => {
                 this.emit('partial', p.fsPath)
-                const html = await readFile(join('pages', p.fsPath), 'utf8')
+                const html = await readFile(
+                    join(this.#build.dirs.pages, p.fsPath),
+                    'utf8',
+                )
                 const fragment = parseFragment(html)
                 const imports: CollectedImports = {
                     partials: [],
@@ -274,7 +281,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
 
     async #injectPartials() {
         for (const { commentNode, fragment } of this.#partials) {
-            if (!isProd) {
+            if (!this.#build.production) {
                 defaultTreeAdapter.insertBefore(
                     commentNode.parentNode!,
                     defaultTreeAdapter.createCommentNode(commentNode.data),
@@ -288,7 +295,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
                     commentNode,
                 )
             }
-            if (isProd) {
+            if (this.#build.production) {
                 defaultTreeAdapter.detachNode(commentNode)
             }
         }
@@ -312,7 +319,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
                             `partial ${pp} in webpage ${this.#fsPath} cannot be an absolute path`,
                         )
                     }
-                    if (!isSubpathOfPagesDir(join('pages', pp))) {
+                    if (!isPagesSubpathInPagesDir(this.#build, pp)) {
                         errorExit(
                             `partial ${pp} in webpage ${this.#fsPath} cannot be outside of the pages directory`,
                         )
@@ -352,8 +359,8 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         href: string,
         elem: Element,
     ): ImportedScript {
-        const inPath = join('pages', dirname(this.#fsPath), href)
-        if (!isSubpathOfPagesDir(inPath)) {
+        const inPath = join(this.#build.dirs.pages, dirname(this.#fsPath), href)
+        if (!isPathInPagesDir(this.#build, inPath)) {
             errorExit(
                 `href ${href} in webpage ${this.#fsPath} cannot reference sources outside of the pages directory`,
             )
@@ -377,9 +384,16 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
     }
 }
 
-// check if relative dir is a subpath of ./pages
-const PAGES_ABS_DIR = resolve('pages')
-const isSubpathOfPagesDir = (p: string) => resolve(p).startsWith(PAGES_ABS_DIR)
+// check if relative dir is a subpath of pages dir when joined with pages dir
+// used if the joined pages dir path is only used for the pages dir check
+function isPagesSubpathInPagesDir(build: DankBuild, subpath: string): boolean {
+    return isPathInPagesDir(build, join(build.dirs.pages, subpath))
+}
+
+// check if subpath joined with pages dir is a subpath of pages dir
+function isPathInPagesDir(build: DankBuild, p: string): boolean {
+    return resolve(p).startsWith(build.dirs.pagesResolved)
+}
 
 function getAttr(elem: Element, name: string) {
     return elem.attrs.find(attr => attr.name === name)

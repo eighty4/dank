@@ -10,7 +10,7 @@ import {
 import { extname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import mime from 'mime'
-import { isLogHttp } from './flags.ts'
+import type { DankServe } from './flags.ts'
 import type { HttpServices } from './services.ts'
 
 export type FrontendFetcher = (
@@ -20,12 +20,12 @@ export type FrontendFetcher = (
     notFound: () => void,
 ) => void
 
-export function createWebServer(
-    port: number,
+export function startWebServer(
+    serve: DankServe,
     frontendFetcher: FrontendFetcher,
     httpServices: HttpServices,
-): ReturnType<typeof createServer> {
-    const serverAddress = 'http://localhost:' + port
+) {
+    const serverAddress = 'http://localhost:' + serve.dankPort
     const handler = (req: IncomingMessage, res: ServerResponse) => {
         if (!req.url || !req.method) {
             res.end()
@@ -61,7 +61,13 @@ export function createWebServer(
             })
         }
     }
-    return createServer(isLogHttp() ? createLogWrapper(handler) : handler)
+    createServer(serve.logHttp ? createLogWrapper(handler) : handler).listen(
+        serve.dankPort,
+    )
+    console.log(
+        serve.preview ? 'preview' : 'dev',
+        `server is live at http://127.0.0.1:${serve.dankPort}`,
+    )
 }
 
 function collectReqBody(req: IncomingMessage): Promise<string | null> {

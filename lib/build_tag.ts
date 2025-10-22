@@ -1,7 +1,7 @@
 import { exec } from 'node:child_process'
-import { isProductionBuild } from './flags.ts'
+import type { DankBuild } from './flags.ts'
 
-export async function createBuildTag(): Promise<string> {
+export async function createBuildTag(build: DankBuild): Promise<string> {
     const now = new Date()
     const ms =
         now.getUTCMilliseconds() +
@@ -11,7 +11,7 @@ export async function createBuildTag(): Promise<string> {
     const date = now.toISOString().substring(0, 10)
     const time = String(ms).padStart(8, '0')
     const when = `${date}-${time}`
-    if (isProductionBuild()) {
+    if (build.production) {
         const gitHash = await new Promise((res, rej) =>
             exec('git rev-parse --short HEAD', (err, stdout) => {
                 if (err) rej(err)

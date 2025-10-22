@@ -12,41 +12,37 @@ import { loadConfig } from './config.ts'
 import type { DankConfig } from './dank.ts'
 import { createGlobalDefinitions } from './define.ts'
 import { esbuildDevContext } from './esbuild.ts'
-import { dankPort, esbuildPort, isPreviewBuild } from './flags.ts'
+import { resolveServeFlags, type DankServe } from './flags.ts'
 import { HtmlEntrypoint } from './html.ts'
 import {
     createBuiltDistFilesFetcher,
     createDevServeFilesFetcher,
-    createWebServer,
+    startWebServer,
 } from './http.ts'
 import { startDevServices, updateDevServices } from './services.ts'
 
-const isPreview = isPreviewBuild()
-
-// alternate port for --preview bc of service worker
-const PORT = dankPort() || (isPreview ? 4000 : 3000)
-
-// port for esbuild.serve
-const ESBUILD_PORT = esbuildPort() || 3995
-
 export async function serveWebsite(c: DankConfig): Promise<never> {
-    await rm('build', { force: true, recursive: true })
+    const serve = resolveServeFlags(c)
+    await rm(serve.dirs.buildRoot, { force: true, recursive: true })
     const abortController = new AbortController()
     process.once('exit', () => abortController.abort())
-    if (isPreview) {
-        await startPreviewMode(c, abortController.signal)
+    if (serve.preview) {
+        await startPreviewMode(c, serve, abortController.signal)
     } else {
-        await startDevMode(c, abortController.signal)
+        await startDevMode(c, serve, abortController.signal)
     }
     return new Promise(() => {})
 }
 
-async function startPreviewMode(c: DankConfig, signal: AbortSignal) {
-    const { dir, files } = await buildWebsite(c)
+async function startPreviewMode(
+    c: DankConfig,
+    serve: DankServe,
+    signal: AbortSignal,
+) {
+    const { dir, files } = await buildWebsite(c, serve)
     const frontend = createBuiltDistFilesFetcher(dir, files)
     const devServices = startDevServices(c, signal)
-    createWebServer(PORT, frontend, devServices.http).listen(PORT)
-    console.log(`preview is live at http://127.0.0.1:${PORT}`)
+    startWebServer(serve, frontend, devServices.http)
 }
 
 type BuildContextState =
@@ -58,10 +54,13 @@ type BuildContextState =
     | null
 
 // todo changing partials triggers update on html pages
-async function startDevMode(c: DankConfig, signal: AbortSignal) {
-    const watchDir = join('build', 'watch')
-    await mkdir(watchDir, { recursive: true })
-    const clientJS = await loadClientJS()
+async function startDevMode(
+    c: DankConfig,
+    serve: DankServe,
+    signal: AbortSignal,
+) {
+    await mkdir(serve.dirs.buildWatch, { recursive: true })
+    const clientJS = await loadClientJS(serve.esbuildPort)
     const pagesByUrlPath: Record<string, HtmlEntrypoint> = {}
     const partialsByUrlPath: Record<string, Array<string>> = {}
     const entryPointsByUrlPath: Record<
@@ -101,7 +100,7 @@ async function startDevMode(c: DankConfig, signal: AbortSignal) {
         updateDevServices(updated)
     })
 
-    watch('pages', signal, filename => {
+    watch(serve.dirs.pages, signal, filename => {
         if (extname(filename) === '.html') {
             for (const [urlPath, srcPath] of Object.entries(c.pages)) {
                 if (srcPath === filename) {
@@ -128,8 +127,9 @@ async function startDevMode(c: DankConfig, signal: AbortSignal) {
     )
 
     async function addPage(urlPath: string, srcPath: string) {
-        await mkdir(join(watchDir, urlPath), { recursive: true })
+        await mkdir(join(serve.dirs.buildWatch, urlPath), { recursive: true })
         const htmlEntrypoint = (pagesByUrlPath[urlPath] = new HtmlEntrypoint(
+            serve,
             urlPath,
             srcPath,
             [{ type: 'script', js: clientJS }],
@@ -158,7 +158,7 @@ async function startDevMode(c: DankConfig, signal: AbortSignal) {
             partials => (partialsByUrlPath[urlPath] = partials),
         )
         htmlEntrypoint.on('output', html =>
-            writeFile(join(watchDir, urlPath, 'index.html'), html),
+            writeFile(join(serve.dirs.buildWatch, urlPath, 'index.html'), html),
         )
     }
 
@@ -203,7 +203,7 @@ async function startDevMode(c: DankConfig, signal: AbortSignal) {
                 resetBuildContext()
             })
         } else {
-            startEsbuildWatch(collectEntrypoints()).then(ctx => {
+            startEsbuildWatch(c, serve, collectEntrypoints()).then(ctx => {
                 if (buildContext === 'dirty') {
                     buildContext = null
                     resetBuildContext()
@@ -225,16 +225,15 @@ async function startDevMode(c: DankConfig, signal: AbortSignal) {
     //     }
     // }
 
-    buildContext = await startEsbuildWatch(collectEntrypoints())
+    buildContext = await startEsbuildWatch(c, serve, collectEntrypoints())
     const frontend = createDevServeFilesFetcher({
         pages: c.pages,
-        pagesDir: watchDir,
-        proxyPort: ESBUILD_PORT,
+        pagesDir: serve.dirs.buildWatch,
+        proxyPort: serve.esbuildPort,
         publicDir: 'public',
     })
     const devServices = startDevServices(c, signal)
-    createWebServer(PORT, frontend, devServices.http).listen(PORT)
-    console.log(`dev server is live at http://127.0.0.1:${PORT}`)
+    startWebServer(serve, frontend, devServices.http)
 }
 
 function matchingEntrypoints(a: Set<string>, b: Set<string>): boolean {
@@ -250,33 +249,36 @@ function matchingEntrypoints(a: Set<string>, b: Set<string>): boolean {
 }
 
 async function startEsbuildWatch(
+    c: DankConfig,
+    serve: DankServe,
     entryPoints: Array<{ in: string; out: string }>,
 ): Promise<BuildContext> {
     const ctx = await esbuildDevContext(
-        createGlobalDefinitions(),
+        serve,
+        createGlobalDefinitions(serve),
         entryPoints,
-        'build/watch',
+        c.esbuild,
     )
 
     await ctx.watch()
 
     await ctx.serve({
         host: '127.0.0.1',
-        port: ESBUILD_PORT,
+        port: serve.esbuildPort,
         cors: {
-            origin: 'http://127.0.0.1:' + PORT,
+            origin: 'http://127.0.0.1:' + serve.dankPort,
         },
     })
 
     return ctx
 }
 
-async function loadClientJS() {
+async function loadClientJS(esbuildPort: number) {
     const clientJS = await readFile(
         resolve(import.meta.dirname, join('..', 'client', 'esbuild.js')),
         'utf-8',
     )
-    return clientJS.replace('3995', `${ESBUILD_PORT}`)
+    return clientJS.replace('3995', `${esbuildPort}`)
 }
 
 async function watch(

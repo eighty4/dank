@@ -1,4 +1,4 @@
-import { isProductionBuild } from './flags.ts'
+import type { DankBuild } from './flags.ts'
 
 export type DankGlobal = {
     IS_DEV: boolean
@@ -9,10 +9,9 @@ type DefineDankGlobalKey = 'dank.IS_DEV' | 'dank.IS_PROD'
 
 export type DefineDankGlobal = Record<DefineDankGlobalKey, string>
 
-export function createGlobalDefinitions(): DefineDankGlobal {
-    const isProduction = isProductionBuild()
+export function createGlobalDefinitions(build: DankBuild): DefineDankGlobal {
     return {
-        'dank.IS_DEV': JSON.stringify(!isProduction),
-        'dank.IS_PROD': JSON.stringify(isProduction),
+        'dank.IS_DEV': JSON.stringify(!build.production),
+        'dank.IS_PROD': JSON.stringify(build.production),
     }
 }

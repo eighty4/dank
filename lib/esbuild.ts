@@ -5,57 +5,71 @@ import esbuild, {
     type Message,
     type Metafile,
 } from 'esbuild'
+import type { EsbuildConfig } from './dank.ts'
 import type { DefineDankGlobal } from './define.ts'
-import { willMinify } from './flags.ts'
+import type { DankBuild } from './flags.ts'
 
-const jsBuildOptions: BuildOptions & { metafile: true; write: true } = {
-    bundle: true,
-    metafile: true,
-    minify: willMinify(),
-    platform: 'browser',
-    splitting: false,
-    treeShaking: true,
-    write: true,
+function jsBuildOptions(b: DankBuild, c?: EsbuildConfig): BuildOptions {
+    return {
+        loader: c?.loaders || defaultLoaders(),
+        minify: b.minify,
+        platform: 'browser',
+        plugins: c?.plugins,
+        splitting: false,
+        treeShaking: true,
+        format: 'esm',
+    }
 }
 
-const webpageBuildOptions: BuildOptions & { metafile: true; write: true } = {
-    assetNames: 'assets/[name]-[hash]',
-    format: 'esm',
-    loader: {
-        '.tff': 'file',
+function webpageBuildOptions(
+    b: DankBuild,
+    c?: EsbuildConfig,
+): BuildOptions & { metafile: true; write: true } {
+    return {
+        ...jsBuildOptions(b, c),
+        bundle: true,
+        metafile: true,
+        write: true,
+        assetNames: 'assets/[name]-[hash]',
+    }
+}
+
+function defaultLoaders(): BuildOptions['loader'] {
+    return {
         '.woff': 'file',
         '.woff2': 'file',
-    },
-    ...jsBuildOptions,
+    }
 }
 
 export async function esbuildDevContext(
+    b: DankBuild,
     define: DefineDankGlobal,
     entryPoints: Array<{ in: string; out: string }>,
-    outdir: string,
+    c?: EsbuildConfig,
 ): Promise<BuildContext> {
     return await esbuild.context({
         define,
         entryNames: '[dir]/[name]',
         entryPoints: mapEntryPointPaths(entryPoints),
-        outdir,
-        ...webpageBuildOptions,
+        outdir: b.dirs.buildWatch,
+        ...webpageBuildOptions(b, c),
         metafile: false,
         write: false,
     })
 }
 
 export async function esbuildWebpages(
+    b: DankBuild,
     define: DefineDankGlobal,
     entryPoints: Array<{ in: string; out: string }>,
-    outdir: string,
+    c?: EsbuildConfig,
 ): Promise<Metafile> {
     const buildResult = await esbuild.build({
         define,
         entryNames: '[dir]/[name]-[hash]',
         entryPoints: mapEntryPointPaths(entryPoints),
-        outdir,
-        ...webpageBuildOptions,
+        outdir: b.dirs.buildDist,
+        ...webpageBuildOptions(b, c),
     })
     esbuildResultChecks(buildResult)
     return buildResult.metafile

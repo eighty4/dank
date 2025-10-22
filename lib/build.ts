@@ -4,23 +4,24 @@ import { createBuildTag } from './build_tag.ts'
 import type { DankConfig } from './dank.ts'
 import { type DefineDankGlobal, createGlobalDefinitions } from './define.ts'
 import { esbuildWebpages } from './esbuild.ts'
-import { isProductionBuild, willMinify } from './flags.ts'
+import { resolveBuildFlags, type DankBuild } from './flags.ts'
 import { HtmlEntrypoint, HtmlHrefs } from './html.ts'
 import { writeBuildManifest, writeMetafile } from './manifest.ts'
 import { copyAssets } from './public.ts'
 
-export type DankBuild = {
+export type DankBuildSummary = {
     dir: string
     files: Set<string>
 }
 
-export async function buildWebsite(c: DankConfig): Promise<DankBuild> {
-    const buildDir = 'build'
-    const distDir = join(buildDir, 'dist')
-    const buildTag = await createBuildTag()
+export async function buildWebsite(
+    c: DankConfig,
+    build: DankBuild = resolveBuildFlags(),
+): Promise<DankBuildSummary> {
+    const buildTag = await createBuildTag(build)
     console.log(
-        willMinify()
-            ? isProductionBuild()
+        build.minify
+            ? build.production
                 ? 'minified production'
                 : 'minified'
             : 'unminified',
@@ -28,25 +29,26 @@ export async function buildWebsite(c: DankConfig): Promise<DankBuild> {
         buildTag,
         'building in ./build/dist',
     )
-    await rm(buildDir, { recursive: true, force: true })
-    await mkdir(distDir, { recursive: true })
+    await rm(build.dirs.buildRoot, { recursive: true, force: true })
+    await mkdir(build.dirs.buildDist, { recursive: true })
     for (const subdir of Object.keys(c.pages).filter(url => url !== '/')) {
-        await mkdir(join(distDir, subdir), { recursive: true })
+        await mkdir(join(build.dirs.buildDist, subdir), { recursive: true })
     }
-    await mkdir(join(buildDir, 'metafiles'), { recursive: true })
-    const staticAssets = await copyAssets(distDir)
+    await mkdir(join(build.dirs.buildRoot, 'metafiles'), { recursive: true })
+    const staticAssets = await copyAssets(build)
     const buildUrls: Array<string> = await buildWebpages(
-        distDir,
-        createGlobalDefinitions(),
+        c,
+        build,
+        createGlobalDefinitions(build),
         c.pages,
     )
     if (staticAssets) {
         buildUrls.push(...staticAssets)
     }
     const result = new Set(buildUrls)
-    await writeBuildManifest(buildTag, result)
+    await writeBuildManifest(build, buildTag, result)
     return {
-        dir: distDir,
+        dir: build.dirs.buildDist,
         files: result,
     }
 }
@@ -55,7 +57,8 @@ export async function buildWebsite(c: DankConfig): Promise<DankBuild> {
 // to support code splitting
 // returns all built assets URLs and webpage URLs from DankConfig.pages
 async function buildWebpages(
-    distDir: string,
+    c: DankConfig,
+    build: DankBuild,
     define: DefineDankGlobal,
     pages: Record<string, string>,
 ): Promise<Array<string>> {
@@ -65,7 +68,7 @@ async function buildWebpages(
     > = []
     const htmlEntrypoints: Array<HtmlEntrypoint> = []
     for (const [urlPath, fsPath] of Object.entries(pages)) {
-        const html = new HtmlEntrypoint(urlPath, fsPath)
+        const html = new HtmlEntrypoint(build, urlPath, fsPath)
         loadingEntryPoints.push(new Promise(res => html.on('entrypoints', res)))
         htmlEntrypoints.push(html)
     }
@@ -81,8 +84,13 @@ async function buildWebpages(
         }
     }
 
-    const metafile = await esbuildWebpages(define, buildEntryPoints, distDir)
-    await writeMetafile(`pages.json`, metafile)
+    const metafile = await esbuildWebpages(
+        build,
+        define,
+        buildEntryPoints,
+        c.esbuild,
+    )
+    await writeMetafile(build, `pages.json`, metafile)
 
     // write out html output with rewritten hrefs
     const hrefs = new HtmlHrefs()
@@ -90,7 +98,7 @@ async function buildWebpages(
     await Promise.all(
         htmlEntrypoints.map(async html => {
             await writeFile(
-                join(distDir, html.url, 'index.html'),
+                join(build.dirs.buildDist, html.url, 'index.html'),
                 html.output(hrefs),
             )
         }),
