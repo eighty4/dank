@@ -53,6 +53,11 @@ type BuildContextState =
     | 'preparing'
     | null
 
+type EntrypointsState = {
+    entrypoints: Array<{ in: string; out: string }>
+    pathsIn: Set<string>
+}
+
 // todo changing partials triggers update on html pages
 async function startDevMode(
     c: DankConfig,
@@ -63,13 +68,7 @@ async function startDevMode(
     const clientJS = await loadClientJS(serve.esbuildPort)
     const pagesByUrlPath: Record<string, HtmlEntrypoint> = {}
     const partialsByUrlPath: Record<string, Array<string>> = {}
-    const entryPointsByUrlPath: Record<
-        string,
-        {
-            entrypoints: Array<{ in: string; out: string }>
-            pathsIn: Set<string>
-        }
-    > = {}
+    const entryPointsByUrlPath: Record<string, EntrypointsState> = {}
     let buildContext: BuildContextState = 'preparing'
 
     watch('dank.config.ts', signal, async () => {
