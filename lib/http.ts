@@ -85,6 +85,9 @@ async function tryHttpServices(
     body: string | null,
     httpServices: HttpServices,
 ): Promise<Response | null> {
+    if (url.pathname.startsWith('/.well-known/')) {
+        return null
+    }
     const { running } = httpServices
     for (const httpService of running) {
         const proxyUrl = new URL(url)
