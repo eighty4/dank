@@ -265,7 +265,9 @@ async function startEsbuildWatch(
         host: '127.0.0.1',
         port: serve.esbuildPort,
         cors: {
-            origin: 'http://127.0.0.1:' + serve.dankPort,
+            origin: ['127.0.0.1', 'localhost'].map(
+                hostname => `http://${hostname}:${serve.dankPort}`,
+            ),
         },
     })
 
