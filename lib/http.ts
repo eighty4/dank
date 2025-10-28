@@ -173,7 +173,7 @@ export function createDevServeFilesFetcher(
             streamFile(join(opts.pagesDir, url.pathname, 'index.html'), res)
         } else {
             const maybePublicPath = join(opts.publicDir, url.pathname)
-            exists(join(opts.publicDir, url.pathname)).then(fromPublic => {
+            exists(maybePublicPath).then(fromPublic => {
                 if (fromPublic) {
                     streamFile(maybePublicPath, res)
                 } else {
