@@ -59,6 +59,9 @@ pnpm typecheck
 echo '\n*** @eighty4/dank: dank build ***'
 pnpm build
 
+echo '\n*** @eighty4/dank: test ***'
+pnpm test
+
 echo '\n*** @eighty4/dank: fmtcheck ***'
 pnpm fmtcheck
 

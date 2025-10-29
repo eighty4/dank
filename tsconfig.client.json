@@ -1,7 +1,7 @@
 {
     "extends": "./tsconfig.json",
     "compilerOptions": {
-        "lib": ["DOM", "DOM.Iterable"],
+        "lib": ["DOM", "DOM.Iterable", "ESNext"],
         "declaration": false,
         "rootDir": "client",
         "outDir": "client"

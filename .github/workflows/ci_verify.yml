@@ -6,8 +6,29 @@ on:
     branches: [main]
   push:
   workflow_call:
+
 jobs:
   verify:
+    needs: [test-dank, verify-dank, verify-create-dank]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Do you like green eggs and ham?'
+
+  # test/serve/* tests hang on ubuntu runners
+  test-dank:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm i
+      - run: pnpm build
+      - run: pnpm test
+
+  verify-dank:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +39,19 @@ jobs:
           cache: pnpm
       - run: pnpm i
       - run: pnpm build
-      - run: pnpm -r build
       - run: pnpm fmtcheck
-      - run: pnpm -r fmtcheck
-      - run: echo 'Do you like green eggs and ham?'
+
+  verify-create-dank:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm i
+      - working-directory: create-dank
+        run: pnpm build
+      - working-directory: create-dank
+        run: pnpm fmtcheck
