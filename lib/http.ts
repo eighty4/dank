@@ -20,10 +20,23 @@ export type FrontendFetcher = (
     notFound: () => void,
 ) => void
 
+// state needed to eval url rewriting after FrontendFetcher and before HttpServices
+export type PageRouteState = {
+    // urls of html entrypoints
+    urls: Array<string>
+    urlRewrites: Array<UrlRewrite>
+}
+
+export type UrlRewrite = {
+    pattern: RegExp
+    url: string
+}
+
 export function startWebServer(
     serve: DankServe,
     frontendFetcher: FrontendFetcher,
     httpServices: HttpServices,
+    pageRoutes: PageRouteState,
 ) {
     const serverAddress = 'http://localhost:' + serve.dankPort
     const handler = (req: IncomingMessage, res: ServerResponse) => {
@@ -32,33 +45,17 @@ export function startWebServer(
         } else {
             const url = new URL(serverAddress + req.url)
             const headers = convertHeadersToFetch(req.headers)
-            frontendFetcher(url, headers, res, () => {
-                collectReqBody(req).then(body =>
-                    tryHttpServices(
-                        req.method!,
-                        url,
-                        headers,
-                        body,
-                        httpServices,
-                    ).then(fetchResponse => {
-                        if (fetchResponse === null) {
-                            res.writeHead(404)
-                            res.end()
-                        } else {
-                            res.writeHead(
-                                fetchResponse.status,
-                                undefined,
-                                convertHeadersFromFetch(fetchResponse.headers),
-                            )
-                            if (fetchResponse.body) {
-                                Readable.fromWeb(fetchResponse.body).pipe(res)
-                            } else {
-                                res.end()
-                            }
-                        }
-                    }),
-                )
-            })
+            frontendFetcher(url, headers, res, () =>
+                onNotFound(
+                    req,
+                    url,
+                    headers,
+                    httpServices,
+                    pageRoutes,
+                    serve,
+                    res,
+                ),
+            )
         }
     }
     createServer(serve.logHttp ? createLogWrapper(handler) : handler).listen(
@@ -70,24 +67,67 @@ export function startWebServer(
     )
 }
 
-function collectReqBody(req: IncomingMessage): Promise<string | null> {
-    let body = ''
-    req.on('data', data => (body += data.toString()))
-    return new Promise(res =>
-        req.on('end', () => res(body.length ? body : null)),
+async function onNotFound(
+    req: IncomingMessage,
+    url: URL,
+    headers: Headers,
+    httpServices: HttpServices,
+    pageRoutes: PageRouteState,
+    serve: DankServe,
+    res: ServerResponse,
+) {
+    if (req.method === 'GET' && extname(url.pathname) === '') {
+        const urlRewrite = tryUrlRewrites(url, pageRoutes, serve)
+        if (urlRewrite) {
+            streamFile(urlRewrite, res)
+            return
+        }
+    }
+    const fetchResponse = await tryHttpServices(req, url, headers, httpServices)
+    if (fetchResponse) {
+        sendFetchResponse(res, fetchResponse)
+    } else {
+        res.writeHead(404)
+        res.end()
+    }
+}
+
+async function sendFetchResponse(res: ServerResponse, fetchResponse: Response) {
+    res.writeHead(
+        fetchResponse.status,
+        undefined,
+        convertHeadersFromFetch(fetchResponse.headers),
     )
+    if (fetchResponse.body) {
+        Readable.fromWeb(fetchResponse.body).pipe(res)
+    } else {
+        res.end()
+    }
+}
+
+function tryUrlRewrites(
+    url: URL,
+    pageRoutes: PageRouteState,
+    serve: DankServe,
+): string | null {
+    const urlRewrite = pageRoutes.urlRewrites.find(urlRewrite =>
+        urlRewrite.pattern.test(url.pathname),
+    )
+    return urlRewrite
+        ? join(serve.dirs.buildWatch, urlRewrite.url, 'index.html')
+        : null
 }
 
 async function tryHttpServices(
-    method: string,
+    req: IncomingMessage,
     url: URL,
     headers: Headers,
-    body: string | null,
     httpServices: HttpServices,
 ): Promise<Response | null> {
     if (url.pathname.startsWith('/.well-known/')) {
         return null
     }
+    const body = await collectReqBody(req)
     const { running } = httpServices
     for (const httpService of running) {
         const proxyUrl = new URL(url)
@@ -96,7 +136,7 @@ async function tryHttpServices(
             const response = await retryFetchWithTimeout(proxyUrl, {
                 body,
                 headers,
-                method,
+                method: req.method,
                 redirect: 'manual',
             })
             if (response.status === 404 || response.status === 405) {
@@ -115,6 +155,14 @@ async function tryHttpServices(
         }
     }
     return null
+}
+
+function collectReqBody(req: IncomingMessage): Promise<string | null> {
+    let body = ''
+    req.on('data', data => (body += data.toString()))
+    return new Promise(res =>
+        req.on('end', () => res(body.length ? body : null)),
+    )
 }
 
 type RequestListener = (req: IncomingMessage, res: ServerResponse) => void
@@ -138,44 +186,37 @@ export function createBuiltDistFilesFetcher(
         res: ServerResponse,
         notFound: () => void,
     ) => {
-        if (!files.has(url.pathname)) {
-            notFound()
-        } else {
-            const p =
+        if (files.has(url.pathname)) {
+            streamFile(
                 extname(url.pathname) === ''
                     ? join(dir, url.pathname, 'index.html')
-                    : join(dir, url.pathname)
-            streamFile(p, res)
+                    : join(dir, url.pathname),
+                res,
+            )
+        } else {
+            notFound()
         }
     }
 }
 
-type DevServeOpts = {
-    // ref of original DankConfig['pages'] mapping
-    // updated incrementally instead of replacing
-    pages: Record<string, string>
-    // dir processed html files are written to
-    pagesDir: string
-    // port to esbuild dev server
-    proxyPort: number
-    // dir of public assets
-    publicDir: string
-}
-
 export function createDevServeFilesFetcher(
-    opts: DevServeOpts,
+    pageRoutes: PageRouteState,
+    serve: DankServe,
 ): FrontendFetcher {
-    const proxyAddress = 'http://127.0.0.1:' + opts.proxyPort
+    const proxyAddress = 'http://127.0.0.1:' + serve.esbuildPort
     return (
         url: URL,
         _headers: Headers,
         res: ServerResponse,
         notFound: () => void,
     ) => {
-        if (opts.pages[url.pathname]) {
-            streamFile(join(opts.pagesDir, url.pathname, 'index.html'), res)
+        if (pageRoutes.urls.includes(url.pathname)) {
+            streamFile(
+                join(serve.dirs.buildWatch, url.pathname, 'index.html'),
+                res,
+            )
         } else {
-            const maybePublicPath = join(opts.publicDir, url.pathname)
+            const maybePublicPath = join(serve.dirs.public, url.pathname)
             exists(maybePublicPath).then(fromPublic => {
                 if (fromPublic) {
                     streamFile(maybePublicPath, res)

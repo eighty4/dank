@@ -7,8 +7,11 @@ export type DankConfig = {
     // customize esbuild configs
     esbuild?: EsbuildConfig
 
-    // mapping url to fs paths of webpages to build
-    pages: Record<`/${string}`, `${string}.html`>
+    // mapping url to html files in the project pages dir
+    // page url (map key) represents html output path in build dir
+    // regardless of the html path in the pages dir
+    // cdn url rewriting can be simulated with PageMapping
+    pages: Record<`/${string}`, `${string}.html` | PageMapping>
 
     // port of `dank serve` frontend dev server
     // used for `dan serve --preview` if previewPort not specified
@@ -19,6 +22,14 @@ export type DankConfig = {
 
     // dev services launched during `dank serve`
     services?: Array<DevService>
+}
+
+// extend an html entrypoint with url rewriting similar to cdn configurations
+// after trying all webpage, bundle and asset paths, mapping patterns
+// will be tested in the alphabetical order of the webpage paths
+export type PageMapping = {
+    pattern?: RegExp
+    webpage: `${string}.html`
 }
 
 export type DevService = {
@@ -71,7 +82,7 @@ export async function defineConfig(
     validatePages(c.pages)
     validateDevServices(c.services)
     validateEsbuildConfig(c.esbuild)
-    normalizePagePaths(c.pages)
+    normalizePagePaths(c.pages!)
     return c as DankConfig
 }
 
@@ -113,13 +124,40 @@ function validatePages(pages?: DankConfig['pages']) {
     ) {
         throw Error('DankConfig.pages is required')
     }
-    for (const [urlPath, htmlPath] of Object.entries(pages)) {
-        if (typeof htmlPath !== 'string' || !htmlPath.endsWith('.html')) {
-            throw Error(
-                `DankConfig.pages['${urlPath}'] must configure an html file`,
-            )
+    for (const [urlPath, mapping] of Object.entries(pages)) {
+        if (typeof mapping === 'string' && mapping.endsWith('.html')) {
+            continue
         }
+        if (typeof mapping === 'object') {
+            validatePageMapping(urlPath, mapping)
+            continue
+        }
+        throw Error(
+            `DankConfig.pages['${urlPath}'] must configure an html file`,
+        )
     }
+}
+
+function validatePageMapping(urlPath: string, mapping: PageMapping) {
+    if (
+        mapping.webpage === null ||
+        typeof mapping.webpage !== 'string' ||
+        !mapping.webpage.endsWith('.html')
+    ) {
+        throw Error(
+            `DankConfig.pages['${urlPath}'].webpage must configure an html file`,
+        )
+    }
+    if (mapping.pattern === null || typeof mapping.pattern === 'undefined') {
+        return
+    }
+    if (
+        typeof mapping.pattern === 'object' &&
+        mapping.pattern.constructor.name === 'RegExp'
+    ) {
+        return
+    }
+    throw Error(`DankConfig.pages['${urlPath}'].pattern must be a RegExp`)
 }
 
 function validateDevServices(services: DankConfig['services']) {
@@ -169,8 +207,16 @@ function validateDevServices(services: DankConfig['services']) {
     }
 }
 
-function normalizePagePaths(pages: any) {
-    for (const urlPath of Object.keys(pages)) {
-        pages[urlPath] = pages[urlPath].replace(/^\.\//, '')
+function normalizePagePaths(pages: DankConfig['pages']) {
+    for (const [pageUrl, mapping] of Object.entries(pages)) {
+        if (typeof mapping === 'string') {
+            pages[pageUrl as `/${string}`] = normalizePagePath(mapping)
+        } else {
+            mapping.webpage = normalizePagePath(mapping.webpage)
+        }
     }
+}
+
+function normalizePagePath(p: `${string}.html`): `${string}.html` {
+    return p.replace(/^\.\//, '') as `${string}.html`
 }

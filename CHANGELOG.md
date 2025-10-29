@@ -13,6 +13,8 @@
   `ESBUILD_PORT` as overrides
 - esbuild.BuildOptions `loaders` and `plugins` can be configured with
   `defineConfig` in `dank.config.ts`
+- Page routes configuring HtmlEntrypoints in `dank.config.ts` can use a PageMapping
+  with a `pattern: RegExp` to simulate CDN url rewriting when running `dank serve`
 
 ## [v0.0.3] - 2025-10-13
 

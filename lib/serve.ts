@@ -18,6 +18,8 @@ import {
     createBuiltDistFilesFetcher,
     createDevServeFilesFetcher,
     startWebServer,
+    type PageRouteState,
+    type UrlRewrite,
 } from './http.ts'
 import { startDevServices, updateDevServices } from './services.ts'
 
@@ -42,7 +44,22 @@ async function startPreviewMode(
     const { dir, files } = await buildWebsite(c, serve)
     const frontend = createBuiltDistFilesFetcher(dir, files)
     const devServices = startDevServices(c, signal)
-    startWebServer(serve, frontend, devServices.http)
+    startWebServer(serve, frontend, devServices.http, {
+        urls: Object.keys(c.pages),
+        urlRewrites: collectUrlRewrites(c),
+    })
+}
+
+function collectUrlRewrites(c: DankConfig): Array<UrlRewrite> {
+    return Object.keys(c.pages)
+        .sort()
+        .map(url => {
+            const mapping = c.pages[url as `/${string}`]
+            return typeof mapping !== 'object' || !mapping.pattern
+                ? null
+                : { url, pattern: mapping.pattern }
+        })
+        .filter(mapping => mapping !== null)
 }
 
 type BuildContextState =
@@ -80,8 +97,10 @@ async function startDevMode(
         }
         const prevPages = new Set(Object.keys(pagesByUrlPath))
         await Promise.all(
-            Object.entries(updated.pages).map(async ([urlPath, srcPath]) => {
-                c.pages[urlPath as `/${string}`] = srcPath
+            Object.entries(updated.pages).map(async ([urlPath, mapping]) => {
+                c.pages[urlPath as `/${string}`] = mapping
+                const srcPath =
+                    typeof mapping === 'string' ? mapping : mapping.webpage
                 if (!pagesByUrlPath[urlPath]) {
                     await addPage(urlPath, srcPath)
                 } else {
@@ -117,7 +136,9 @@ async function startDevMode(
     })
 
     await Promise.all(
-        Object.entries(c.pages).map(async ([urlPath, srcPath]) => {
+        Object.entries(c.pages).map(async ([urlPath, mapping]) => {
+            const srcPath =
+                typeof mapping === 'string' ? mapping : mapping.webpage
             await addPage(urlPath, srcPath)
             return new Promise(res =>
                 pagesByUrlPath[urlPath].once('entrypoints', res),
@@ -225,14 +246,18 @@ async function startDevMode(
     // }
 
     buildContext = await startEsbuildWatch(c, serve, collectEntrypoints())
-    const frontend = createDevServeFilesFetcher({
-        pages: c.pages,
-        pagesDir: serve.dirs.buildWatch,
-        proxyPort: serve.esbuildPort,
-        publicDir: 'public',
-    })
+    // todo this page route state could be built on change and reused
+    const pageRoutes: PageRouteState = {
+        get urls(): Array<string> {
+            return Object.keys(c.pages)
+        },
+        get urlRewrites(): Array<UrlRewrite> {
+            return collectUrlRewrites(c)
+        },
+    }
+    const frontend = createDevServeFilesFetcher(pageRoutes, serve)
     const devServices = startDevServices(c, signal)
-    startWebServer(serve, frontend, devServices.http)
+    startWebServer(serve, frontend, devServices.http, pageRoutes)
 }
 
 function matchingEntrypoints(a: Set<string>, b: Set<string>): boolean {

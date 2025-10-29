@@ -40,7 +40,6 @@ export async function buildWebsite(
         c,
         build,
         createGlobalDefinitions(build),
-        c.pages,
     )
     if (staticAssets) {
         buildUrls.push(...staticAssets)
@@ -60,14 +59,14 @@ async function buildWebpages(
     c: DankConfig,
     build: DankBuild,
     define: DefineDankGlobal,
-    pages: Record<string, string>,
 ): Promise<Array<string>> {
     // create HtmlEntrypoint for each webpage and collect awaitable esbuild entrypoints
     const loadingEntryPoints: Array<
         Promise<Array<{ in: string; out: string }>>
     > = []
     const htmlEntrypoints: Array<HtmlEntrypoint> = []
-    for (const [urlPath, fsPath] of Object.entries(pages)) {
+    for (const [urlPath, mapping] of Object.entries(c.pages)) {
+        const fsPath = typeof mapping === 'string' ? mapping : mapping.webpage
         const html = new HtmlEntrypoint(build, urlPath, fsPath)
         loadingEntryPoints.push(new Promise(res => html.on('entrypoints', res)))
         htmlEntrypoints.push(html)
@@ -105,5 +104,5 @@ async function buildWebpages(
     )
 
     // return website urls of webpages and assets
-    return [...Object.keys(pages), ...hrefs.buildOutputUrls]
+    return [...Object.keys(c.pages), ...hrefs.buildOutputUrls]
 }
