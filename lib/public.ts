@@ -1,4 +1,5 @@
 import { copyFile, mkdir, readdir, stat } from 'node:fs/promises'
+import { platform } from 'node:os'
 import { join } from 'node:path'
 import type { DankBuild } from './flags.ts'
 
@@ -18,6 +19,8 @@ export async function copyAssets(
     }
 }
 
+const IGNORE = platform() === 'darwin' ? ['.DS_Store'] : []
+
 async function recursiveCopyAssets(
     build: DankBuild,
     dir: string = '',
@@ -27,6 +30,9 @@ async function recursiveCopyAssets(
     let madeDir = dir === ''
     const listingDir = join(build.dirs.public, dir)
     for (const p of await readdir(listingDir)) {
+        if (IGNORE.includes(p)) {
+            continue
+        }
         try {
             const stats = await stat(join(listingDir, p))
             if (stats.isDirectory()) {
