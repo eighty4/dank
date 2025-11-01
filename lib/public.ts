@@ -33,7 +33,9 @@ async function recursiveCopyAssets(
                 copied.push(...(await recursiveCopyAssets(build, join(dir, p))))
             } else {
                 if (!madeDir) {
-                    await mkdir(join(build.dirs.buildDist, dir))
+                    await mkdir(join(build.dirs.buildDist, dir), {
+                        recursive: true,
+                    })
                     madeDir = true
                 }
                 await copyFile(join(listingDir, p), join(to, p))
