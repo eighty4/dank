@@ -8,13 +8,16 @@ import {
     stat,
     writeFile,
 } from 'node:fs/promises'
+import { Socket } from 'node:net'
 import { join } from 'node:path'
+
+let isNetworkAvailable: Promise<boolean> = checkNetwork()
 
 // fallbacks for npm packages if network error
 const FALLBACKS: Record<string, string> = {
     '@eighty4/dank': '0.0.3',
     npm: '11.6.2',
-    pnpm: '10.18.2',
+    pnpm: '10.20.0',
 }
 
 const runtime: 'bun' | 'node' | 'unknown' = (function resolveRuntime() {
@@ -248,16 +251,46 @@ function nodeMajorVersion(): number {
 }
 
 async function getLatestVersion(packageName: string): Promise<string> {
-    try {
-        const response = await fetch(
-            `https://registry.npmjs.org/${packageName}/latest`,
-        )
-        if (response.ok) {
-            const { version } = await response.json()
-            return version
+    if (await isNetworkAvailable) {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 2000)
+        try {
+            const response = await fetch(
+                `https://registry.npmjs.org/${packageName}/latest`,
+                { signal: controller.signal },
+            )
+            clearTimeout(timeout)
+            if (response.ok) {
+                const { version } = await response.json()
+                return version
+            }
+        } catch (e: any) {
+            clearTimeout(timeout)
+            const errorMsg =
+                e.name === 'AbortError' ? 'timeout' : e.message.toLowerCase()
+            printError(
+                `\`${errorMsg}\` fetching ${packageName} version from npm`,
+            )
         }
-    } catch (error) {}
+    }
     return FALLBACKS[packageName]
+}
+
+async function checkNetwork(): Promise<boolean> {
+    return new Promise(res => {
+        const s = new Socket()
+        s.once('connect', () => {
+            s.end()
+            s.unref()
+            res(true)
+        })
+        s.once('error', () => {
+            s.end()
+            s.unref()
+            res(false)
+        })
+        s.connect(443, '8.8.8.8')
+    })
 }
 
 function printError(e: string | Error) {
