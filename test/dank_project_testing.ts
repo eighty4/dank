@@ -1,20 +1,88 @@
-import { exec, spawn } from 'node:child_process'
+import {
+    type ChildProcessWithoutNullStreams,
+    exec,
+    spawn,
+} from 'node:child_process'
 import EventEmitter from 'node:events'
-import { readFile, mkdtemp, writeFile } from 'node:fs/promises'
+import { readFile, realpath, mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { waitForEsbuildServe } from './esbuild_events_testing.ts'
 import { getAvailablePort, waitForPort } from './ports.ts'
+import { defaultProjectDirs, type DankBuild } from '../lib/flags.ts'
+
+const DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true'
+
+export async function testDir(): Promise<DankBuild['dirs']> {
+    const dir = await realpath(await mkdtemp(join(tmpdir(), 'dank-test-')))
+    const dirs = defaultProjectDirs(dir)
+    await mkdir(join(dir, dirs.pages))
+    await mkdir(join(dir, dirs.public))
+    return dirs
+}
+
+export async function createDank(): Promise<string> {
+    const dir = join(await mkdtemp(join(tmpdir(), 'dank-test-')), 'www')
+    await new Promise<void>((res, rej) => {
+        exec(
+            `node create-dank/create.ts --out-dir ${dir} 2>&1`,
+            (err, stdout) => {
+                if (err) {
+                    rej(
+                        Error('`node create-dank/create.ts` error', {
+                            cause: err,
+                        }),
+                    )
+                } else {
+                    if (DEBUG) console.log(stdout)
+                    res()
+                }
+            },
+        )
+    })
+    await readReplaceWrite(
+        join(dir, 'package.json'),
+        /"@eighty4\/dank": ".*"/,
+        `"@eighty4/dank": "file:${dirname(import.meta.dirname)}"`,
+    )
+    await new Promise<void>((res, rej) => {
+        let timeout: ReturnType<typeof setTimeout> | null = null
+        const npmInstall = exec('npm i', { cwd: dir }, err => {
+            if (timeout) clearTimeout(timeout)
+            if (err) {
+                rej(Error(`failed \`npm i\`: ${err.message}`))
+            } else {
+                res()
+            }
+        })
+        const TIMEOUT = 3000
+        timeout = setTimeout(() => {
+            npmInstall.kill()
+            rej(Error(`failed \`npm i\`: timed out after ${TIMEOUT / 1000}s`))
+        }, TIMEOUT)
+    })
+    return dir
+}
 
 export async function dankBuild(cwd: string): Promise<void> {
     await new Promise<void>((res, rej) => {
-        exec('npm run build', { cwd }, (err, stdout) => {
+        exec('npm run build 2>&1', { cwd }, (err, stdout) => {
             if (err) {
+                if (DEBUG && stdout) console.log(stdout)
                 rej(Error('`npm run build` error', { cause: err }))
+            } else {
+                if (DEBUG) console.log(stdout)
+                res()
             }
-            res()
         })
     })
+}
+
+export async function dankServe(cwd: string): Promise<DankServing> {
+    const dankPort = await getAvailablePort()
+    const esbuildPort = await getAvailablePort(dankPort)
+    const serving = new DankServing(cwd, dankPort, esbuildPort)
+    return serving
 }
 
 export type DankServingEvents = {
@@ -23,17 +91,60 @@ export type DankServingEvents = {
 }
 
 export class DankServing extends EventEmitter<DankServingEvents> {
+    #cwd: string
     #dankPort: number
     #esbuildPort: number
     #output: string = ''
+    #process: ChildProcessWithoutNullStreams | null = null
 
-    constructor(dankPort: number, esbuildPort: number) {
+    constructor(cwd: string, dankPort: number, esbuildPort: number) {
         super()
+        this.#cwd = cwd
         this.#dankPort = dankPort
         this.#esbuildPort = esbuildPort
     }
 
-    appendOutput(s: string) {
+    async start() {
+        const env = {
+            ...process.env,
+            DANK_PORT: `${this.dankPort}`,
+            ESBUILD_PORT: `${this.esbuildPort}`,
+        }
+        this.#process = spawn('npm', ['run', 'dev'], { cwd: this.#cwd, env })
+        this.#process.stdout.on('data', chunk =>
+            this.#appendOutput(chunk.toString()),
+        )
+        this.#process.stderr.on('data', chunk =>
+            this.#appendOutput(chunk.toString()),
+        )
+        this.#process.on('error', e => {
+            if (e.name !== 'AbortError') {
+                this.emit(
+                    'error',
+                    new Error('`dank serve` error', { cause: e }),
+                )
+            }
+        })
+        this.#process.on('exit', exitCode => {
+            if (exitCode !== null && exitCode !== 0) {
+                this.emit(
+                    'exit',
+                    Error('`dank serve` exited with non-zero exit code'),
+                )
+            }
+        })
+        try {
+            await waitForPort(this.dankPort)
+            await waitForEsbuildServe(this.esbuildPort)
+        } catch (e) {
+            throw Error('failed waiting for `dank serve` to be ready', {
+                cause: e,
+            })
+        }
+    }
+
+    #appendOutput(s: string) {
+        if (DEBUG) console.log(s)
         this.#output += s
     }
 
@@ -48,75 +159,15 @@ export class DankServing extends EventEmitter<DankServingEvents> {
     get output(): string {
         return this.#output
     }
-}
 
-export async function dankServe(
-    cwd: string,
-    signal: AbortSignal,
-): Promise<DankServing> {
-    const dankPort = await getAvailablePort()
-    const esbuildPort = await getAvailablePort(dankPort)
-    const serving = new DankServing(dankPort, esbuildPort)
-
-    const env = {
-        ...process.env,
-        DANK_PORT: `${dankPort}`,
-        ESBUILD_PORT: `${esbuildPort}`,
+    [Symbol.dispose]() {
+        console.debug('disposing `dank serve` process and event emitters')
+        this.#process?.removeAllListeners()
+        this.#process?.stdout.removeAllListeners()
+        this.#process?.stderr.removeAllListeners()
+        this.#process?.kill()
+        this.removeAllListeners()
     }
-    const dankServe = spawn('npm', ['run', 'dev'], { cwd, env, signal })
-    dankServe.stdout.on('data', chunk => serving.appendOutput(chunk.toString()))
-    dankServe.stderr.on('data', chunk => serving.appendOutput(chunk.toString()))
-    dankServe.on('error', e => {
-        if (e.name !== 'AbortError') {
-            serving.emit('error', new Error('`dank serve` error', { cause: e }))
-        }
-    })
-    dankServe.on('exit', exitCode => {
-        if (exitCode !== null && exitCode !== 0) {
-            serving.emit(
-                'exit',
-                Error('`dank serve` exited with non-zero exit code'),
-            )
-        }
-    })
-
-    try {
-        await waitForPort(dankPort)
-        await waitForEsbuildServe(esbuildPort)
-    } catch (e) {
-        throw Error('timed out waiting for `dank serve`', { cause: e })
-    }
-
-    return serving
-}
-
-export async function createDank(): Promise<string> {
-    const dir = join(await mkdtemp(join(tmpdir(), 'dank-test-')), 'www')
-    await new Promise<void>(res => {
-        exec('node create-dank/create.ts --out-dir ' + dir, (err, stdout) => {
-            if (err) {
-                throw Error('`node create-dank/create.ts` error', {
-                    cause: err,
-                })
-            }
-            res()
-        })
-    })
-    await readReplaceWrite(
-        join(dir, 'package.json'),
-        /"@eighty4\/dank": ".*"/,
-        `"@eighty4/dank": "file:${dirname(import.meta.dirname)}"`,
-    )
-    await new Promise<void>(res => {
-        exec('npm i', { cwd: dir }, (err, stdout) => {
-            if (err) {
-                console.error('failed npm i:', err.message)
-                process.exit(1)
-            }
-            res()
-        })
-    })
-    return dir
 }
 
 export async function readReplaceWrite(

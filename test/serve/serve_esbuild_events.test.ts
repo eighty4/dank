@@ -28,29 +28,23 @@ test('partial with js and css entrypoints dispatch esbuild events', async () => 
         join(testDir, 'pages', 'Notifications.css'),
         `dialog[open] { display: none; }`,
     )
-    const abortController = new AbortController()
-    const dankServing = await dankServe(testDir, abortController.signal)
+    using dankServing = await dankServe(testDir)
     dankServing.on('error', assert.fail)
     dankServing.on('exit', assert.fail)
-    const esbuildEvents = new EsbuildEvents(dankServing.esbuildPort)
-    esbuildEvents.on('error', assert.fail)
-    await esbuildEvents.connect(abortController.signal)
-    try {
-        await writeFile(
-            join(testDir, 'pages', 'Notifications.ts'),
-            `document.querySelector('dialog').open = true`,
-        )
-        assert.deepEqual((await esbuildEvents.nextEvent()).added.toSorted(), [
-            '/Notifications.css',
-            '/Notifications.js',
-            '/dank.css',
-            '/dank.js',
-        ])
-        await writeFile(join(testDir, 'pages', 'Notifications.css'), ``)
-        assert.deepEqual((await esbuildEvents.nextEvent()).updated.toSorted(), [
-            '/Notifications.css',
-        ])
-    } finally {
-        abortController.abort()
-    }
+    await dankServing.start()
+    using esbuildEvents = new EsbuildEvents(dankServing.esbuildPort)
+    await writeFile(
+        join(testDir, 'pages', 'Notifications.ts'),
+        `document.querySelector('dialog').open = true`,
+    )
+    assert.deepEqual((await esbuildEvents.nextEvent()).added.toSorted(), [
+        '/Notifications.css',
+        '/Notifications.js',
+        '/dank.css',
+        '/dank.js',
+    ])
+    await writeFile(join(testDir, 'pages', 'Notifications.css'), ``)
+    assert.deepEqual((await esbuildEvents.nextEvent()).updated.toSorted(), [
+        '/Notifications.css',
+    ])
 })

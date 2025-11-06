@@ -4,6 +4,8 @@
 
 ### Added
 
+- Scripts can import Workers with relative paths like `new Worker('./worker.ts')`
+  and the URL will be rewritten to the website's output path for `worker.ts`
 - Contents of HTML partials imported within HTML comments using a syntax
   like: `<!-- {{ ./meta_tags.html }} -->` are inserted into webpages
 - `dank.config.ts` configures dev services with an HTTP port for proxying

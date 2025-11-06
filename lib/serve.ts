@@ -11,7 +11,7 @@ import { buildWebsite } from './build.ts'
 import { loadConfig } from './config.ts'
 import type { DankConfig } from './dank.ts'
 import { createGlobalDefinitions } from './define.ts'
-import { esbuildDevContext } from './esbuild.ts'
+import { esbuildDevContext, type EntryPoint } from './esbuild.ts'
 import { resolveServeFlags, type DankServe } from './flags.ts'
 import { HtmlEntrypoint } from './html.ts'
 import {
@@ -21,6 +21,7 @@ import {
     type PageRouteState,
     type UrlRewrite,
 } from './http.ts'
+import { WebsiteRegistry } from './metadata.ts'
 import { startDevServices, updateDevServices } from './services.ts'
 
 export async function serveWebsite(c: DankConfig): Promise<never> {
@@ -41,8 +42,8 @@ async function startPreviewMode(
     serve: DankServe,
     signal: AbortSignal,
 ) {
-    const { dir, files } = await buildWebsite(c, serve)
-    const frontend = createBuiltDistFilesFetcher(dir, files)
+    const manifest = await buildWebsite(c, serve)
+    const frontend = createBuiltDistFilesFetcher(serve.dirs.buildDist, manifest)
     const devServices = startDevServices(c, signal)
     startWebServer(serve, frontend, devServices.http, {
         urls: Object.keys(c.pages),
@@ -67,11 +68,10 @@ type BuildContextState =
     | 'starting'
     | 'dirty'
     | 'disposing'
-    | 'preparing'
     | null
 
 type EntrypointsState = {
-    entrypoints: Array<{ in: string; out: string }>
+    entrypoints: Array<EntryPoint>
     pathsIn: Set<string>
 }
 
@@ -82,11 +82,14 @@ async function startDevMode(
     signal: AbortSignal,
 ) {
     await mkdir(serve.dirs.buildWatch, { recursive: true })
+    const registry = new WebsiteRegistry(serve)
     const clientJS = await loadClientJS(serve.esbuildPort)
     const pagesByUrlPath: Record<string, HtmlEntrypoint> = {}
     const partialsByUrlPath: Record<string, Array<string>> = {}
     const entryPointsByUrlPath: Record<string, EntrypointsState> = {}
-    let buildContext: BuildContextState = 'preparing'
+    let buildContext: BuildContextState = null
+
+    registry.on('workers', resetBuildContext)
 
     watch('dank.config.ts', signal, async () => {
         let updated: DankConfig
@@ -193,9 +196,9 @@ async function startDevMode(
         pagesByUrlPath[urlPath].emit('change', partial)
     }
 
-    function collectEntrypoints(): Array<{ in: string; out: string }> {
+    function collectEntrypoints(): Array<EntryPoint> {
         const unique: Set<string> = new Set()
-        return Object.values(entryPointsByUrlPath)
+        const pageBundles = Object.values(entryPointsByUrlPath)
             .flatMap(entrypointState => entrypointState.entrypoints)
             .filter(entryPoint => {
                 if (unique.has(entryPoint.in)) {
@@ -205,32 +208,45 @@ async function startDevMode(
                     return true
                 }
             })
+        const workerBundles = registry.workerEntryPoints()
+        if (workerBundles) {
+            return [...pageBundles, ...workerBundles]
+        } else {
+            return pageBundles
+        }
     }
 
     function resetBuildContext() {
-        if (buildContext === 'preparing' || buildContext === 'disposing') {
-            return
-        }
-        if (buildContext === 'starting' || buildContext === 'dirty') {
-            buildContext = 'dirty'
-            return
+        switch (buildContext) {
+            case 'starting':
+                buildContext = 'dirty'
+                return
+            case 'dirty':
+            case 'disposing':
+                return
         }
         if (buildContext !== null) {
-            const prev = buildContext
+            const disposing = buildContext.dispose()
             buildContext = 'disposing'
-            prev.dispose().then(() => {
+            disposing.then(() => {
                 buildContext = null
                 resetBuildContext()
             })
         } else {
-            startEsbuildWatch(c, serve, collectEntrypoints()).then(ctx => {
-                if (buildContext === 'dirty') {
-                    buildContext = null
-                    resetBuildContext()
-                } else {
-                    buildContext = ctx
-                }
-            })
+            buildContext = 'starting'
+            startEsbuildWatch(c, registry, serve, collectEntrypoints()).then(
+                ctx => {
+                    if (buildContext === 'dirty') {
+                        buildContext = 'disposing'
+                        ctx.dispose().then(() => {
+                            buildContext = null
+                            resetBuildContext()
+                        })
+                    } else {
+                        buildContext = ctx
+                    }
+                },
+            )
         }
     }
 
@@ -245,7 +261,9 @@ async function startDevMode(
     //     }
     // }
 
-    buildContext = await startEsbuildWatch(c, serve, collectEntrypoints())
+    // inital start of esbuild ctx
+    resetBuildContext()
+
     // todo this page route state could be built on change and reused
     const pageRoutes: PageRouteState = {
         get urls(): Array<string> {
@@ -274,11 +292,13 @@ function matchingEntrypoints(a: Set<string>, b: Set<string>): boolean {
 
 async function startEsbuildWatch(
     c: DankConfig,
+    registry: WebsiteRegistry,
     serve: DankServe,
-    entryPoints: Array<{ in: string; out: string }>,
+    entryPoints: Array<EntryPoint>,
 ): Promise<BuildContext> {
     const ctx = await esbuildDevContext(
         serve,
+        registry,
         createGlobalDefinitions(serve),
         entryPoints,
         c.esbuild,

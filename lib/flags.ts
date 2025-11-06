@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path'
+import { cwd } from 'node:process'
 import type { DankConfig } from './dank.ts'
 
 export type DankBuild = {
@@ -13,12 +14,13 @@ type ProjectDirs = {
     buildDist: string
     pages: string
     pagesResolved: string
+    projectRootAbs: string
     public: string
 }
 
 export function resolveBuildFlags(): DankBuild {
     const flags: DankBuild = {
-        dirs: projectDirs(),
+        dirs: defaultProjectDirs(cwd()),
         minify: willMinify(),
         production: isProductionBuild(),
     }
@@ -45,7 +47,7 @@ export type DankServe = DankBuild & {
 export function resolveServeFlags(c: DankConfig): DankServe {
     const preview = isPreviewBuild()
     const flags: DankServe = {
-        dirs: projectDirs(),
+        dirs: defaultProjectDirs(cwd()),
         dankPort: dankPort(c, preview),
         esbuildPort: esbuildPort(c),
         logHttp: willLogHttp(),
@@ -113,13 +115,14 @@ function parsePortEnvVar(name: string): number {
     }
 }
 
-function projectDirs(): ProjectDirs {
+export function defaultProjectDirs(projectRootAbs: string): ProjectDirs {
     const dirs: ProjectDirs = {
         buildRoot: 'build',
         buildDist: join('build', 'dist'),
         buildWatch: join('build', 'watch'),
         pages: 'pages',
-        pagesResolved: resolve('pages'),
+        pagesResolved: resolve(join(projectRootAbs, 'pages')),
+        projectRootAbs,
         public: 'public',
     }
     return {
@@ -137,6 +140,9 @@ function projectDirs(): ProjectDirs {
         },
         get pagesResolved(): string {
             return dirs.pagesResolved
+        },
+        get projectRootAbs(): string {
+            return dirs.projectRootAbs
         },
         get public(): string {
             return dirs.public

@@ -15,7 +15,7 @@ function getRandomPort() {
 }
 
 export async function waitForPort(port: number) {
-    const TIMEOUT = 3000
+    const TIMEOUT = 5000
     const DELAY = 100
     const INTERVAL = 20
     await new Promise(res => setTimeout(res, DELAY))

@@ -1,84 +1,130 @@
-import EventEmitter from 'node:events'
 import { isPortListening } from './ports.ts'
 import type { EsbuildEvent } from '../client/esbuild.ts'
 
-type EsbuildEventsMap = {
-    error: [Error]
-}
-
-export class EsbuildEvents extends EventEmitter<EsbuildEventsMap> {
+export class EsbuildEvents {
+    #buffer = ''
+    #debug: boolean
+    #decoder = new TextDecoder('utf8')
     #events: Array<EsbuildEvent> = []
-    #next: ((event: EsbuildEvent) => void) | null = null
+    #next: {
+        reject: () => void
+        resolve: (event: EsbuildEvent) => void
+        timeout: ReturnType<typeof setTimeout>
+    } | null = null
     #port: number
+    #reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>> | null = null
+    #controller: AbortController = new AbortController()
 
-    constructor(port: number) {
-        super()
+    constructor(port: number, debug: boolean = false) {
+        this.#debug = debug
         this.#port = port
+        this.#connect()
     }
 
-    // assign returned promise without awaiting
-    // await after AbortController.abort() as part of test wrapup
-    async connect(signal: AbortSignal): Promise<void> {
-        const response = await fetch(`http://127.0.0.1:${this.#port}/esbuild`, {
-            headers: new Headers({
-                Accept: 'text/event-stream',
-            }),
-            signal,
-        })
-        if (!response.ok) {
-            throw Error('esbuild sse response ' + response.status)
-        }
-        this.#readUntilClosed(response.body!.getReader())
-    }
-
-    nextEvent(): Promise<EsbuildEvent> {
+    nextEvent(timeout: number = 6000): Promise<EsbuildEvent> {
         if (this.#next) throw Error()
         const next = this.#events.shift()
         if (next) {
             return Promise.resolve(next)
         } else {
-            return new Promise(res => (this.#next = res))
+            return new Promise(
+                (resolve, reject) =>
+                    (this.#next = {
+                        resolve,
+                        reject,
+                        timeout: setTimeout(
+                            () =>
+                                reject(
+                                    Error(
+                                        'timeout awaiting next esbuild SSE event',
+                                    ),
+                                ),
+                            timeout,
+                        ),
+                    }),
+            )
         }
     }
 
-    async #readUntilClosed(
-        reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>,
-    ) {
-        try {
-            const decoder = new TextDecoder('utf-8')
-            let buffer = ''
-            let stream: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>
-            do {
-                stream = await reader.read()
-                buffer += decoder.decode(stream.value, { stream: true })
-                let lastNewline = buffer.lastIndexOf('\n\n')
-                while (lastNewline !== -1) {
-                    const message = buffer.substring(0, lastNewline)
-                    buffer = buffer.substring(lastNewline + 2)
-                    const dataMatch = message.match(/data: (.*)/)
-                    if (dataMatch) {
-                        this.#onEvent(JSON.parse(dataMatch[1]))
-                    }
-                    lastNewline = buffer.lastIndexOf('\n\n')
+    #connect() {
+        fetch(`http://127.0.0.1:${this.#port}/esbuild`, {
+            headers: new Headers({
+                Accept: 'text/event-stream',
+                'Cache-Control': 'no-cache',
+            }),
+            signal: this.#controller.signal,
+        })
+            .then(response => {
+                if (this.#debug) console.log('sse connected')
+                if (response.ok) {
+                    this.#reader = response.body!.getReader()
+                    this.#readUntilClosed()
+                } else {
+                    this.#connectRetry()
                 }
-            } while (!stream.done)
-        } catch (e: any) {
-            if (e.name !== 'AbortError') {
-                this.emit(
-                    'error',
-                    Error('error streaming esbuild sse', { cause: e }),
-                )
+            })
+            .catch(e => {
+                if (e.name !== 'AbortError') {
+                    if (this.#debug) console.log('sse reconnect on fetch error')
+                    this.#connectRetry()
+                }
+            })
+    }
+
+    #connectRetry() {
+        setTimeout(() => this.#connect(), 10)
+    }
+
+    #consumeEvents() {
+        let lastNewline = this.#buffer.lastIndexOf('\n\n')
+        while (lastNewline !== -1) {
+            const message = this.#buffer.substring(0, lastNewline)
+            this.#buffer = this.#buffer.substring(lastNewline + 2)
+            const dataMatch = message.match(/data: (.*)/)
+            if (dataMatch) {
+                this.#onEvent(JSON.parse(dataMatch[1]))
             }
+            lastNewline = this.#buffer.lastIndexOf('\n\n')
         }
     }
 
     #onEvent(event: EsbuildEvent) {
+        if (this.#debug)
+            console.log('sse event: ' + JSON.stringify(event, null, 4))
         if (this.#next) {
-            this.#next(event)
+            clearTimeout(this.#next.timeout)
+            this.#next.resolve(event)
             this.#next = null
         } else {
             this.#events.push(event)
         }
+    }
+
+    #readUntilClosed() {
+        this.#reader!.read()
+            .then(
+                (stream: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>) => {
+                    this.#buffer += this.#decoder.decode(stream.value, {
+                        stream: true,
+                    })
+                    if (this.#debug) console.log(this.#buffer)
+                    this.#consumeEvents()
+                    if (!stream.done) {
+                        this.#readUntilClosed()
+                    }
+                },
+            )
+            .catch(() => {
+                if (this.#debug) console.log('sse reconnect on reader error')
+                this.#connectRetry()
+            })
+    }
+
+    [Symbol.dispose]() {
+        if (this.#debug)
+            console.debug('disposing esbuild SSE connection and event emitters')
+        this.#controller.abort()
+        this.#reader = null
     }
 }
 

@@ -11,6 +11,7 @@ import { extname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import mime from 'mime'
 import type { DankServe } from './flags.ts'
+import type { WebsiteManifest } from './metadata.ts'
 import type { HttpServices } from './services.ts'
 
 export type FrontendFetcher = (
@@ -178,7 +179,7 @@ function createLogWrapper(handler: RequestListener): RequestListener {
 
 export function createBuiltDistFilesFetcher(
     dir: string,
-    files: Set<string>,
+    manifest: WebsiteManifest,
 ): FrontendFetcher {
     return (
         url: URL,
@@ -186,19 +187,17 @@ export function createBuiltDistFilesFetcher(
         res: ServerResponse,
         notFound: () => void,
     ) => {
-        if (files.has(url.pathname)) {
-            streamFile(
-                extname(url.pathname) === ''
-                    ? join(dir, url.pathname, 'index.html')
-                    : join(dir, url.pathname),
-                res,
-            )
+        if (manifest.pageUrls.has(url.pathname)) {
+            streamFile(join(dir, url.pathname, 'index.html'), res)
+        } else if (manifest.files.has(url.pathname)) {
+            streamFile(join(dir, url.pathname), res)
         } else {
             notFound()
         }
     }
 }
 
+// todo replace PageRouteState with WebsiteRegistry
 export function createDevServeFilesFetcher(
     pageRoutes: PageRouteState,
     serve: DankServe,

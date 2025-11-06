@@ -4,7 +4,7 @@
     "type": "module",
     "license": "MIT",
     "author": "Adam McKee Bennett <adam.be.g84d@gmail.com>",
-    "packageManager": "pnpm@10.17.1",
+    "packageManager": "pnpm@10.21.0",
     "description": "Multi-page development system for CDN-deployed websites",
     "keywords": [
         "frontend",
@@ -24,7 +24,7 @@
         "build": "tsc && tsc -p tsconfig.client.json && tsc -p tsconfig.exports.json",
         "fmt": "prettier --write .",
         "fmtcheck": "prettier --check .",
-        "test": "node --test test/**/*.test.ts",
+        "test": "node --test \"test/**/*.test.ts\"",
         "test:rebuild": "pnpm build && pnpm test",
         "typecheck": "tsc --noEmit"
     },

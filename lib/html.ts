@@ -2,7 +2,6 @@ import EventEmitter from 'node:events'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { extname } from 'node:path/posix'
-import type { Metafile } from 'esbuild'
 import {
     defaultTreeAdapter,
     type DefaultTreeAdapterTypes,
@@ -10,6 +9,7 @@ import {
     parseFragment,
     serialize,
 } from 'parse5'
+import type { EntryPoint } from './esbuild.ts'
 import type { DankBuild } from './flags.ts'
 
 type CommentNode = DefaultTreeAdapterTypes.CommentNode
@@ -39,7 +39,7 @@ type ImportedScript = {
     type: 'script' | 'style'
     href: string
     elem: Element
-    entrypoint: { in: string; out: string }
+    entrypoint: EntryPoint
 }
 
 export type HtmlDecoration = {
@@ -47,36 +47,9 @@ export type HtmlDecoration = {
     js: string
 }
 
-// todo public assets hrefs
-export class HtmlHrefs {
-    // hrefs mapped from entrypoint path in format `pages/styles.css`
-    // without `./` and always from project root with `pages`
-    // and mapped to the web server accssible asset path such as `/styles.css`
-    #mapped: Record<string, string> = {}
-
-    addEsbuildOutputs(metafile: Metafile) {
-        for (const [outputFile, { entryPoint }] of Object.entries(
-            metafile.outputs,
-        )) {
-            if (!entryPoint) {
-                errorExit(
-                    `esbuild output ${outputFile} missing entryPoint is unexpected`,
-                )
-            }
-            this.#mapped[entryPoint] = outputFile.replace(
-                /^build[\/\\]dist/,
-                '',
-            )
-        }
-    }
-
-    mappedHref(lookup: string): string {
-        return this.#mapped[lookup]
-    }
-
-    get buildOutputUrls(): Array<string> {
-        return Object.values(this.#mapped)
-    }
+// implicitly impl'd by WebsiteRegistry
+export type HtmlHrefs = {
+    mappedHref(lookup: string): string
 }
 
 export type HtmlEntrypointEvents = {
@@ -85,7 +58,7 @@ export type HtmlEntrypointEvents = {
     change: [partial?: string]
     // Dispatched from HtmlEntrypoint to notify `dank serve` of changes to esbuild entrypoints
     // Parameter `entrypoints` is the esbuild mappings of the input and output paths
-    entrypoints: [entrypoints: Array<{ in: string; out: string }>]
+    entrypoints: [entrypoints: Array<EntryPoint>]
     // Dispatched from HtmlEntrypoint to notify when new HtmlEntrypoint.#document output is ready for write
     // Parameter `html` is the updated html content of the page ready to be output to the build dir
     output: [html: string]
@@ -102,6 +75,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
     #build: DankBuild
     #decorations?: Array<HtmlDecoration>
     #document: Document = defaultTreeAdapter.createDocument()
+    // todo cache entrypoints set for quicker diffing
     // #entrypoints: Set<string> = new Set()
     #fsPath: string
     #partials: Array<PartialContent> = []
@@ -136,7 +110,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         try {
             return await readFile(
                 join(this.#build.dirs.pages, this.#fsPath),
-                'utf-8',
+                'utf8',
             )
         } catch (e) {
             // todo error handling
@@ -405,8 +379,8 @@ function hasAttr(elem: Element, name: string, value: string): boolean {
 
 function mergeEntrypoints(
     ...imports: Array<CollectedImports>
-): Array<{ in: string; out: string }> {
-    const entrypoints: Array<{ in: string; out: string }> = []
+): Array<EntryPoint> {
+    const entrypoints: Array<EntryPoint> = []
     for (const { scripts } of imports) {
         for (const script of scripts) {
             entrypoints.push(script.entrypoint)
