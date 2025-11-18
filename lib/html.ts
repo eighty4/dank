@@ -287,19 +287,23 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
             if (childNode.nodeName === '#comment' && 'data' in childNode) {
                 const partialMatch = childNode.data.match(/\{\{(?<pp>.+)\}\}/)
                 if (partialMatch) {
-                    const pp = partialMatch.groups!.pp.trim()
-                    if (pp.startsWith('/')) {
+                    const partialSpecifier = partialMatch.groups!.pp.trim()
+                    if (partialSpecifier.startsWith('/')) {
                         errorExit(
-                            `partial ${pp} in webpage ${this.#fsPath} cannot be an absolute path`,
+                            `partial ${partialSpecifier} in webpage ${this.#fsPath} cannot be an absolute path`,
                         )
                     }
-                    if (!isPagesSubpathInPagesDir(this.#build, pp)) {
+                    const partialPath = join(
+                        dirname(this.#fsPath),
+                        partialSpecifier,
+                    )
+                    if (!isPagesSubpathInPagesDir(this.#build, partialPath)) {
                         errorExit(
-                            `partial ${pp} in webpage ${this.#fsPath} cannot be outside of the pages directory`,
+                            `partial ${partialSpecifier} in webpage ${this.#fsPath} cannot be outside of the pages directory`,
                         )
                     }
                     collection.partials.push({
-                        fsPath: pp.replace(/^\.\//, ''),
+                        fsPath: partialPath,
                         commentNode: childNode,
                     })
                 }
