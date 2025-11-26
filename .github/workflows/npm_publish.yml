@@ -109,9 +109,10 @@ jobs:
     defaults:
       run:
         working-directory: ${{ needs.check-build-params.outputs.work_dir }}
+    permissions:
+      id-token: write
     env:
       NPM_TAG: ${{ inputs.semver-bump == 'prerelease' && 'next' || 'latest' }}
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:

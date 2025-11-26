@@ -12,6 +12,10 @@
         "esbuild",
         "dank"
     ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/eighty4/dank"
+    },
     "bin": "./lib_js/bin.js",
     "exports": {
         ".": {
