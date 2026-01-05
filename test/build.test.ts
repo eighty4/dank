@@ -1,26 +1,22 @@
 import assert from 'node:assert/strict'
-import { realpath, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { type BuildResult } from 'esbuild'
 import { createWorkerRegex, rewriteWorkerUrls } from '../lib/build.ts'
 import { type DankBuild } from '../lib/flags.ts'
 import { WebsiteRegistry } from '../lib/metadata.ts'
+import { testDir } from './dank_project_testing.ts'
 
 test('rewriteWorkerUrls', async () => {
-    const dir = await realpath(await mkdtemp(join(tmpdir(), 'dank-test-')))
-    const build = {
-        dirs: {
-            buildDist: join('build', 'dist'),
-            pagesResolved: join(dir, 'pages'),
-            projectRootAbs: dir,
-        },
-    } as DankBuild
-    await mkdir(join(dir, build.dirs.buildDist), { recursive: true })
+    const dirs = await testDir()
+    const build = { dirs } as DankBuild
+    await mkdir(join(dirs.projectRootAbs, build.dirs.buildDist), {
+        recursive: true,
+    })
     await writeFile(
         join(
-            dir,
+            dirs.projectRootAbs,
             build.dirs.buildDist,
             'mega-performant-ui-thread-A1B2C3D4.js',
         ),
@@ -58,7 +54,7 @@ const w = new Worker('/computational-wizardry.js')
     await rewriteWorkerUrls(build, registry)
     const contents = await readFile(
         join(
-            dir,
+            dirs.projectRootAbs,
             build.dirs.buildDist,
             'mega-performant-ui-thread-A1B2C3D4.js',
         ),

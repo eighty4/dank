@@ -153,6 +153,7 @@ async function startDevMode(
         await mkdir(join(serve.dirs.buildWatch, urlPath), { recursive: true })
         const htmlEntrypoint = (pagesByUrlPath[urlPath] = new HtmlEntrypoint(
             serve,
+            registry.resolver,
             urlPath,
             srcPath,
             [{ type: 'script', js: clientJS }],

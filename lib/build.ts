@@ -51,7 +51,12 @@ async function buildWebpages(
     const htmlEntrypoints: Array<HtmlEntrypoint> = []
     for (const [urlPath, mapping] of Object.entries(c.pages)) {
         const fsPath = typeof mapping === 'string' ? mapping : mapping.webpage
-        const html = new HtmlEntrypoint(build, urlPath, fsPath)
+        const html = new HtmlEntrypoint(
+            build,
+            registry.resolver,
+            urlPath,
+            fsPath,
+        )
         loadingEntryPoints.push(new Promise(res => html.on('entrypoints', res)))
         htmlEntrypoints.push(html)
     }

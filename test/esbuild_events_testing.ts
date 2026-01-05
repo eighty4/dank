@@ -1,9 +1,10 @@
 import { isPortListening } from './ports.ts'
 import type { EsbuildEvent } from '../client/esbuild.ts'
 
+const DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true'
+
 export class EsbuildEvents {
     #buffer = ''
-    #debug: boolean
     #decoder = new TextDecoder('utf8')
     #events: Array<EsbuildEvent> = []
     #next: {
@@ -16,7 +17,6 @@ export class EsbuildEvents {
     #controller: AbortController = new AbortController()
 
     constructor(port: number, debug: boolean = false) {
-        this.#debug = debug
         this.#port = port
         this.#connect()
     }
@@ -55,7 +55,7 @@ export class EsbuildEvents {
             signal: this.#controller.signal,
         })
             .then(response => {
-                if (this.#debug) console.log('sse connected')
+                if (DEBUG) console.log('sse connected')
                 if (response.ok) {
                     this.#reader = response.body!.getReader()
                     this.#readUntilClosed()
@@ -65,7 +65,7 @@ export class EsbuildEvents {
             })
             .catch(e => {
                 if (e.name !== 'AbortError') {
-                    if (this.#debug) console.log('sse reconnect on fetch error')
+                    if (DEBUG) console.log('sse reconnect on fetch error')
                     this.#connectRetry()
                 }
             })
@@ -89,8 +89,7 @@ export class EsbuildEvents {
     }
 
     #onEvent(event: EsbuildEvent) {
-        if (this.#debug)
-            console.log('sse event: ' + JSON.stringify(event, null, 4))
+        if (DEBUG) console.log('sse event: ' + JSON.stringify(event, null, 4))
         if (this.#next) {
             clearTimeout(this.#next.timeout)
             this.#next.resolve(event)
@@ -107,7 +106,7 @@ export class EsbuildEvents {
                     this.#buffer += this.#decoder.decode(stream.value, {
                         stream: true,
                     })
-                    if (this.#debug) console.log(this.#buffer)
+                    if (DEBUG) console.log(this.#buffer)
                     this.#consumeEvents()
                     if (!stream.done) {
                         this.#readUntilClosed()
@@ -115,13 +114,13 @@ export class EsbuildEvents {
                 },
             )
             .catch(() => {
-                if (this.#debug) console.log('sse reconnect on reader error')
+                if (DEBUG) console.log('sse reconnect on reader error')
                 this.#connectRetry()
             })
     }
 
     [Symbol.dispose]() {
-        if (this.#debug)
+        if (DEBUG)
             console.debug('disposing esbuild SSE connection and event emitters')
         this.#controller.abort()
         this.#reader = null

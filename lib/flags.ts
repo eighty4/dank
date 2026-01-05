@@ -8,12 +8,13 @@ export type DankBuild = {
     production: boolean
 }
 
-type ProjectDirs = {
+export type ProjectDirs = {
     buildRoot: string
     buildWatch: string
     buildDist: string
     pages: string
     pagesResolved: string
+    projectResolved: string
     projectRootAbs: string
     public: string
 }
@@ -116,12 +117,14 @@ function parsePortEnvVar(name: string): number {
 }
 
 export function defaultProjectDirs(projectRootAbs: string): ProjectDirs {
+    const pages = 'pages'
     const dirs: ProjectDirs = {
         buildRoot: 'build',
         buildDist: join('build', 'dist'),
         buildWatch: join('build', 'watch'),
-        pages: 'pages',
-        pagesResolved: resolve(join(projectRootAbs, 'pages')),
+        pages,
+        pagesResolved: resolve(join(projectRootAbs, pages)),
+        projectResolved: resolve(projectRootAbs),
         projectRootAbs,
         public: 'public',
     }
@@ -140,6 +143,9 @@ export function defaultProjectDirs(projectRootAbs: string): ProjectDirs {
         },
         get pagesResolved(): string {
             return dirs.pagesResolved
+        },
+        get projectResolved(): string {
+            return dirs.projectResolved
         },
         get projectRootAbs(): string {
             return dirs.projectRootAbs

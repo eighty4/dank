@@ -1,6 +1,6 @@
 import EventEmitter from 'node:events'
 import { readFile } from 'node:fs/promises'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { extname } from 'node:path/posix'
 import {
     defaultTreeAdapter,
@@ -11,6 +11,7 @@ import {
 } from 'parse5'
 import type { EntryPoint } from './esbuild.ts'
 import type { DankBuild } from './flags.ts'
+import type { Resolver } from './metadata.ts'
 
 type CommentNode = DefaultTreeAdapterTypes.CommentNode
 type Document = DefaultTreeAdapterTypes.Document
@@ -25,6 +26,7 @@ type CollectedImports = {
 
 type PartialReference = {
     commentNode: CommentNode
+    // path within pages dir omitting pages/ segment
     fsPath: string
 }
 
@@ -77,20 +79,24 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
     #document: Document = defaultTreeAdapter.createDocument()
     // todo cache entrypoints set for quicker diffing
     // #entrypoints: Set<string> = new Set()
+    // path within pages dir omitting pages/ segment
     #fsPath: string
     #partials: Array<PartialContent> = []
+    #resolver: Resolver
     #scripts: Array<ImportedScript> = []
     #update: Object = Object()
     #url: string
 
     constructor(
         build: DankBuild,
+        resolver: Resolver,
         url: string,
         fsPath: string,
         decorations?: Array<HtmlDecoration>,
     ) {
         super({ captureRejections: true })
         this.#build = build
+        this.#resolver = resolver
         this.#decorations = decorations
         this.#url = url
         this.#fsPath = fsPath
@@ -297,7 +303,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
                         dirname(this.#fsPath),
                         partialSpecifier,
                     )
-                    if (!isPagesSubpathInPagesDir(this.#build, partialPath)) {
+                    if (!this.#resolver.isPagesSubpathInPagesDir(partialPath)) {
                         errorExit(
                             `partial ${partialSpecifier} in webpage ${this.#fsPath} cannot be outside of the pages directory`,
                         )
@@ -338,7 +344,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         elem: Element,
     ): ImportedScript {
         const inPath = join(this.#build.dirs.pages, dirname(this.#fsPath), href)
-        if (!isPathInPagesDir(this.#build, inPath)) {
+        if (!this.#resolver.isProjectSubpathInPagesDir(inPath)) {
             errorExit(
                 `href ${href} in webpage ${this.#fsPath} cannot reference sources outside of the pages directory`,
             )
@@ -360,17 +366,6 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
             },
         }
     }
-}
-
-// check if relative dir is a subpath of pages dir when joined with pages dir
-// used if the joined pages dir path is only used for the pages dir check
-function isPagesSubpathInPagesDir(build: DankBuild, subpath: string): boolean {
-    return isPathInPagesDir(build, join(build.dirs.pages, subpath))
-}
-
-// check if subpath joined with pages dir is a subpath of pages dir
-function isPathInPagesDir(build: DankBuild, p: string): boolean {
-    return resolve(p).startsWith(build.dirs.pagesResolved)
 }
 
 function getAttr(elem: Element, name: string) {
@@ -411,6 +406,7 @@ function rewriteHrefs(scripts: Array<ImportedScript>, hrefs?: HtmlHrefs) {
     }
 }
 
+// todo evented error handling so HtmlEntrypoint can be unit tested
 function errorExit(msg: string): never {
     console.log(`\u001b[31merror:\u001b[0m`, msg)
     process.exit(1)

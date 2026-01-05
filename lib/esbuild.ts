@@ -179,11 +179,16 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                             1,
                             workerUrlString.length - 1,
                         )
-                        // todo out of bounds error on path resolve
-                        const workerEntryPoint = r.resolve(
-                            clientScript,
-                            workerUrl,
-                        )
+                        const workerEntryPoint =
+                            r.resolver.resolveHrefInPagesDir(
+                                clientScript,
+                                workerUrl,
+                            )
+                        if (workerEntryPoint === 'outofbounds') {
+                            throw Error(
+                                `web worker href ${workerUrl} cannot be resolved from ${clientScript} to a path outside of the pages directory`,
+                            )
+                        }
                         const workerUrlPlaceholder = workerEntryPoint
                             .replace(/^pages/, '')
                             .replace(/\.(t|m?j)s$/, '.js')

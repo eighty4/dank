@@ -62,7 +62,7 @@ w.onerror = console.error
     )
 })
 
-test.only('worker plugin rewrites at correct offset for multiple workers', async () => {
+test('worker plugin rewrites at correct offset for multiple workers', async () => {
     const dirs = await testDir()
     const build = { dirs } as DankBuild
     await writeFile(

@@ -93,14 +93,21 @@ export type DankServingEvents = {
 export class DankServing extends EventEmitter<DankServingEvents> {
     #cwd: string
     #dankPort: number
+    #debug: boolean
     #esbuildPort: number
     #output: string = ''
     #process: ChildProcessWithoutNullStreams | null = null
 
-    constructor(cwd: string, dankPort: number, esbuildPort: number) {
+    constructor(
+        cwd: string,
+        dankPort: number,
+        esbuildPort: number,
+        debug: boolean = false,
+    ) {
         super()
         this.#cwd = cwd
         this.#dankPort = dankPort
+        this.#debug = debug
         this.#esbuildPort = esbuildPort
     }
 
@@ -161,7 +168,8 @@ export class DankServing extends EventEmitter<DankServingEvents> {
     }
 
     [Symbol.dispose]() {
-        console.debug('disposing `dank serve` process and event emitters')
+        if (this.#debug)
+            console.debug('disposing `dank serve` process and event emitters')
         this.#process?.removeAllListeners()
         this.#process?.stdout.removeAllListeners()
         this.#process?.stderr.removeAllListeners()

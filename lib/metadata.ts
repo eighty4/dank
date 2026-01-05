@@ -1,12 +1,51 @@
 import EventEmitter from 'node:events'
 import { writeFile } from 'node:fs/promises'
-import { dirname, join, resolve, sep } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import type { BuildResult } from 'esbuild'
 import type { EntryPoint } from './esbuild.ts'
-import type { DankBuild } from './flags.ts'
+import type { DankBuild, ProjectDirs } from './flags.ts'
+
+export type ResolveError = 'outofbounds'
 
 export type Resolver = {
-    resolve(from: string, href: string): string | 'outofbounds'
+    // `p` is expected to be a relative path resolvable from the project dir
+    isProjectSubpathInPagesDir(p: string): boolean
+
+    // `p` is expected to be a relative path resolvable from the pages dir
+    isPagesSubpathInPagesDir(p: string): boolean
+
+    // resolve a pages subpath from a resource within the pages directory by a relative href
+    // `from` is expected to be a pages resource fs path starting with `pages/` and ending with filename
+    // the result will be a pages subpath and will not have the pages dir prefix
+    // returns 'outofbounds' if the relative path does not resolve to a file within the pages dir
+    resolveHrefInPagesDir(from: string, href: string): string | ResolveError
+}
+
+class ResolverImpl implements Resolver {
+    #dirs: ProjectDirs
+
+    constructor(dirs: ProjectDirs) {
+        this.#dirs = dirs
+    }
+
+    isProjectSubpathInPagesDir(p: string): boolean {
+        return resolve(join(this.#dirs.projectResolved, p)).startsWith(
+            this.#dirs.pagesResolved,
+        )
+    }
+
+    isPagesSubpathInPagesDir(p: string): boolean {
+        return this.isProjectSubpathInPagesDir(join(this.#dirs.pages, p))
+    }
+
+    resolveHrefInPagesDir(from: string, href: string): string | ResolveError {
+        const p = join(dirname(from), href)
+        if (this.isProjectSubpathInPagesDir(p)) {
+            return p
+        } else {
+            return 'outofbounds'
+        }
+    }
 }
 
 // summary of a website build
@@ -45,10 +84,7 @@ export type WebsiteRegistryEvents = {
 }
 
 // manages website resources during `dank build` and `dank serve`
-export class WebsiteRegistry
-    extends EventEmitter<WebsiteRegistryEvents>
-    implements Resolver
-{
+export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
     #build: DankBuild
     // paths of bundled esbuild outputs
     #bundles: Set<string> = new Set()
@@ -57,11 +93,26 @@ export class WebsiteRegistry
     // map of entrypoints to their output path
     #entrypointHrefs: Record<string, string | null> = {}
     #pageUrls: Array<string> = []
+    #resolver: Resolver
     #workers: Array<WorkerManifest> | null = null
 
     constructor(build: DankBuild) {
         super()
         this.#build = build
+        this.#resolver = new ResolverImpl(build.dirs)
+    }
+
+    set copiedAssets(copiedAssets: Array<string> | null) {
+        this.#copiedAssets =
+            copiedAssets === null ? null : new Set(copiedAssets)
+    }
+
+    set pageUrls(pageUrls: Array<string>) {
+        this.#pageUrls = pageUrls
+    }
+
+    get resolver(): Resolver {
+        return this.#resolver
     }
 
     // bundleOutputs(type?: 'css' | 'js'): Array<string> {
@@ -92,10 +143,6 @@ export class WebsiteRegistry
         } else {
             throw Error(`mapped href for ${lookup} not found`)
         }
-    }
-
-    resolve(from: string, href: string): string {
-        return resolveImpl(this.#build, from, href)
     }
 
     workerEntryPoints(): Array<EntryPoint> | null {
@@ -132,15 +179,6 @@ export class WebsiteRegistry
             ),
         )
         return manifest
-    }
-
-    set copiedAssets(copiedAssets: Array<string> | null) {
-        this.#copiedAssets =
-            copiedAssets === null ? null : new Set(copiedAssets)
-    }
-
-    set pageUrls(pageUrls: Array<string>) {
-        this.#pageUrls = pageUrls
     }
 
     #manifest(buildTag: string): WebsiteManifest {
@@ -211,17 +249,21 @@ export class WebsiteRegistry
 }
 
 // result accumulator of an esbuild `build` or `Context.rebuild`
-export class BuildRegistry implements Resolver {
-    #build: DankBuild
+export class BuildRegistry {
     #onComplete: OnBuildComplete
+    #resolver: Resolver
     #workers: Array<Omit<WorkerManifest, 'dependentEntryPoint'>> | null = null
 
     constructor(
         build: DankBuild,
         onComplete: (manifest: BuildManifest) => void,
     ) {
-        this.#build = build
         this.#onComplete = onComplete
+        this.#resolver = new ResolverImpl(build.dirs)
+    }
+
+    get resolver(): Resolver {
+        return this.#resolver
     }
 
     // resolve web worker imported by a webpage module
@@ -263,22 +305,5 @@ export class BuildRegistry implements Resolver {
             bundles,
             workers,
         })
-    }
-
-    resolve(from: string, href: string): string {
-        return resolveImpl(this.#build, from, href)
-    }
-}
-
-function resolveImpl(build: DankBuild, from: string, href: string): string {
-    const { pagesResolved, projectRootAbs } = build.dirs
-    const fromDir = dirname(from)
-    const resolvedFromProjectRoot = join(projectRootAbs, fromDir, href)
-    if (!resolve(resolvedFromProjectRoot).startsWith(pagesResolved)) {
-        throw Error(
-            `href ${href} cannot be resolved from pages${sep}${from} to a path outside of the pages directory`,
-        )
-    } else {
-        return join(fromDir, href)
     }
 }
