@@ -3,7 +3,8 @@ import esbuild, {
     type BuildContext,
     type BuildOptions,
     type BuildResult,
-    type Message,
+    type Location,
+    type OnLoadArgs,
     type PartialMessage,
     type Plugin,
     type PluginBuild,
@@ -40,14 +41,17 @@ export async function esbuildWebpages(
     entryPoints: Array<EntryPoint>,
     c?: EsbuildConfig,
 ): Promise<void> {
-    const result = await esbuild.build({
-        define,
-        entryNames: '[dir]/[name]-[hash]',
-        entryPoints: mapEntryPointPaths(entryPoints),
-        outdir: b.dirs.buildDist,
-        ...commonBuildOptions(b, r, c),
-    })
-    esbuildResultChecks(result)
+    try {
+        await esbuild.build({
+            define,
+            entryNames: '[dir]/[name]-[hash]',
+            entryPoints: mapEntryPointPaths(entryPoints),
+            outdir: b.dirs.buildDist,
+            ...commonBuildOptions(b, r, c),
+        })
+    } catch (ignore) {
+        process.exit(1)
+    }
 }
 
 export async function esbuildWorkers(
@@ -57,18 +61,21 @@ export async function esbuildWorkers(
     entryPoints: Array<EntryPoint>,
     c?: EsbuildConfig,
 ): Promise<void> {
-    const result = await esbuild.build({
-        define,
-        entryNames: '[dir]/[name]-[hash]',
-        entryPoints: mapEntryPointPaths(entryPoints),
-        outdir: b.dirs.buildDist,
-        ...commonBuildOptions(b, r, c),
-        splitting: false,
-        metafile: true,
-        write: true,
-        assetNames: 'assets/[name]-[hash]',
-    })
-    esbuildResultChecks(result)
+    try {
+        await esbuild.build({
+            define,
+            entryNames: '[dir]/[name]-[hash]',
+            entryPoints: mapEntryPointPaths(entryPoints),
+            outdir: b.dirs.buildDist,
+            ...commonBuildOptions(b, r, c),
+            splitting: false,
+            metafile: true,
+            write: true,
+            assetNames: 'assets/[name]-[hash]',
+        })
+    } catch (ignore) {
+        process.exit(1)
+    }
 }
 
 function commonBuildOptions(
@@ -112,29 +119,8 @@ function mapEntryPointPaths(entryPoints: Array<EntryPoint>) {
     })
 }
 
-function esbuildResultChecks(buildResult: BuildResult) {
-    if (buildResult.errors.length) {
-        buildResult.errors.forEach(msg => esbuildPrintMessage(msg, 'warning'))
-        process.exit(1)
-    }
-    if (buildResult.warnings.length) {
-        buildResult.warnings.forEach(msg => esbuildPrintMessage(msg, 'warning'))
-    }
-}
-
-function esbuildPrintMessage(msg: Message, category: 'error' | 'warning') {
-    const location = msg.location
-        ? ` (${msg.location.file}L${msg.location.line}:${msg.location.column})`
-        : ''
-    console.error(`esbuild ${category}${location}:`, msg.text)
-    msg.notes.forEach(note => {
-        console.error('  ', note.text)
-        if (note.location) console.error('   ', note.location)
-    })
-}
-
 const WORKER_CTOR_REGEX =
-    /new(?:\s|\r?\n)+Worker(?:\s|\r?\n)*\((?:\s|\r?\n)*(?<url>.*)(?:\s|\r?\n)*\)/g
+    /new(?:\s|\r?\n)+(?<ctor>(?:Shared)?Worker)(?:\s|\r?\n)*\((?:\s|\r?\n)*(?<url>.*?)(?:\s|\r?\n)*(?<end>[\),])/g
 const WORKER_URL_REGEX = /^('.*'|".*")$/
 
 export function workersPlugin(r: BuildRegistry): Plugin {
@@ -154,90 +140,68 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                 for (const workerCtorMatch of contents.matchAll(
                     WORKER_CTOR_REGEX,
                 )) {
-                    const workerUrlString = workerCtorMatch.groups!.url
-                    if (WORKER_URL_REGEX.test(workerUrlString)) {
-                        const preamble = contents.substring(
-                            0,
-                            workerCtorMatch.index,
-                        )
-                        const lineIndex = preamble.lastIndexOf('\n') || 0
-                        const lineCommented = /\/\//.test(
-                            preamble.substring(lineIndex),
-                        )
-                        if (lineCommented) continue
-                        const blockCommentIndex = preamble.lastIndexOf('/*')
-                        const blockCommented =
-                            blockCommentIndex !== -1 &&
-                            preamble
-                                .substring(blockCommentIndex)
-                                .indexOf('*/') === -1
-                        if (blockCommented) continue
-                        const clientScript = args.path
-                            .replace(absWorkingDir, '')
-                            .substring(1)
-                        const workerUrl = workerUrlString.substring(
-                            1,
-                            workerUrlString.length - 1,
-                        )
-                        const workerEntryPoint =
-                            r.resolver.resolveHrefInPagesDir(
-                                clientScript,
-                                workerUrl,
-                            )
-                        if (workerEntryPoint === 'outofbounds') {
-                            throw Error(
-                                `web worker href ${workerUrl} cannot be resolved from ${clientScript} to a path outside of the pages directory`,
-                            )
-                        }
-                        const workerUrlPlaceholder = workerEntryPoint
-                            .replace(/^pages/, '')
-                            .replace(/\.(t|m?j)s$/, '.js')
-                        const workerCtorReplacement = `new Worker('${workerUrlPlaceholder}')`
-                        contents =
-                            contents.substring(
-                                0,
-                                workerCtorMatch.index + offset,
-                            ) +
-                            workerCtorReplacement +
-                            contents.substring(
-                                workerCtorMatch.index +
-                                    workerCtorMatch[0].length +
-                                    offset,
-                            )
-                        offset +=
-                            workerCtorReplacement.length -
-                            workerCtorMatch[0].length
-                        r.addWorker({
-                            clientScript,
-                            workerEntryPoint,
-                            workerUrl,
-                            workerUrlPlaceholder,
-                        })
-                    } else {
+                    if (!WORKER_URL_REGEX.test(workerCtorMatch.groups!.url)) {
                         if (!errors) errors = []
-                        const preamble = contents.substring(
-                            0,
-                            workerCtorMatch.index,
+                        errors.push(
+                            invalidWorkerUrlCtorArg(
+                                locationFromMatch(
+                                    args,
+                                    contents,
+                                    workerCtorMatch,
+                                ),
+                                workerCtorMatch,
+                            ),
                         )
-                        const line = preamble.match(/\n/g)?.length || 0
-                        const lineIndex = preamble.lastIndexOf('\n') || 0
-                        const column = preamble.length - lineIndex
-                        const lineText = contents.substring(
-                            lineIndex,
-                            contents.indexOf('\n', lineIndex) ||
-                                contents.length,
-                        )
-                        errors.push({
-                            id: 'worker-url-unresolvable',
-                            location: {
-                                lineText,
-                                line,
-                                column,
-                                file: args.path,
-                                length: workerCtorMatch[0].length,
-                            },
-                        })
+                        continue
                     }
+                    if (isIndexCommented(contents, workerCtorMatch.index)) {
+                        continue
+                    }
+                    const clientScript = args.path
+                        .replace(absWorkingDir, '')
+                        .substring(1)
+                    const workerUrl = workerCtorMatch.groups!.url.substring(
+                        1,
+                        workerCtorMatch.groups!.url.length - 1,
+                    )
+                    const workerEntryPoint = r.resolver.resolveHrefInPagesDir(
+                        clientScript,
+                        workerUrl,
+                    )
+                    if (workerEntryPoint === 'outofbounds') {
+                        if (!errors) errors = []
+                        errors.push(
+                            outofboundsWorkerUrlCtorArg(
+                                locationFromMatch(
+                                    args,
+                                    contents,
+                                    workerCtorMatch,
+                                ),
+                                workerCtorMatch,
+                            ),
+                        )
+                        continue
+                    }
+                    const workerUrlPlaceholder = workerEntryPoint
+                        .replace(/^pages/, '')
+                        .replace(/\.(t|m?j)s$/, '.js')
+                    const workerCtorReplacement = `new ${workerCtorMatch.groups!.ctor}('${workerUrlPlaceholder}'${workerCtorMatch.groups!.end}`
+                    contents =
+                        contents.substring(0, workerCtorMatch.index + offset) +
+                        workerCtorReplacement +
+                        contents.substring(
+                            workerCtorMatch.index +
+                                workerCtorMatch[0].length +
+                                offset,
+                        )
+                    offset +=
+                        workerCtorReplacement.length - workerCtorMatch[0].length
+                    r.addWorker({
+                        clientScript,
+                        workerEntryPoint,
+                        workerUrl,
+                        workerUrlPlaceholder,
+                    })
                 }
                 const loader = args.path.endsWith('ts') ? 'ts' : 'js'
                 return { contents, errors, loader }
@@ -249,5 +213,64 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                 }
             })
         },
+    }
+}
+
+function isIndexCommented(contents: string, index: number) {
+    const preamble = contents.substring(0, index)
+    const lineIndex = preamble.lastIndexOf('\n') || 0
+    const lineCommented = /\/\//.test(preamble.substring(lineIndex))
+    if (lineCommented) {
+        return true
+    }
+    const blockCommentIndex = preamble.lastIndexOf('/*')
+    const blockCommented =
+        blockCommentIndex !== -1 &&
+        preamble.substring(blockCommentIndex).indexOf('*/') === -1
+    return blockCommented
+}
+
+function locationFromMatch(
+    args: OnLoadArgs,
+    contents: string,
+    match: RegExpExecArray,
+): Partial<Location> {
+    const preamble = contents.substring(0, match.index)
+    const line = preamble.match(/\n/g)?.length || 0
+    let lineIndex = preamble.lastIndexOf('\n')
+    lineIndex = lineIndex === -1 ? 0 : lineIndex + 1
+    const column = preamble.length - lineIndex
+    const lineText = contents.substring(
+        lineIndex,
+        contents.indexOf('\n', lineIndex) || contents.length,
+    )
+    return {
+        lineText,
+        line,
+        column,
+        file: args.path,
+        length: match[0].length,
+    }
+}
+
+function outofboundsWorkerUrlCtorArg(
+    location: Partial<Location>,
+    workerCtorMatch: RegExpExecArray,
+): PartialMessage {
+    return {
+        id: 'worker-url-outofbounds',
+        text: `The ${workerCtorMatch.groups!.ctor} constructor URL arg \`${workerCtorMatch.groups!.url}\` cannot resolve to a path outside of the pages directory`,
+        location,
+    }
+}
+
+function invalidWorkerUrlCtorArg(
+    location: Partial<Location>,
+    workerCtorMatch: RegExpExecArray,
+): PartialMessage {
+    return {
+        id: 'worker-url-unresolvable',
+        text: `The ${workerCtorMatch.groups!.ctor} constructor URL arg \`${workerCtorMatch.groups!.url}\` must be a relative module path`,
+        location,
     }
 }
