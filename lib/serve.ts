@@ -11,6 +11,7 @@ import { buildWebsite } from './build.ts'
 import { loadConfig } from './config.ts'
 import type { DankConfig } from './dank.ts'
 import { createGlobalDefinitions } from './define.ts'
+import { LOG } from './developer.ts'
 import { esbuildDevContext, type EntryPoint } from './esbuild.ts'
 import { resolveServeFlags, type DankServe } from './flags.ts'
 import { HtmlEntrypoint } from './html.ts'
@@ -89,7 +90,16 @@ async function startDevMode(
     const entryPointsByUrlPath: Record<string, EntrypointsState> = {}
     let buildContext: BuildContextState = null
 
-    registry.on('workers', resetBuildContext)
+    registry.on('workers', () => {
+        LOG({
+            realm: 'serve',
+            message: 'registry updated worker entrypoints',
+            data: {
+                workers: registry.workerEntryPoints()?.map(ep => ep.in) || null,
+            },
+        })
+        resetBuildContext()
+    })
 
     watch('dank.config.ts', signal, async () => {
         let updated: DankConfig
@@ -105,16 +115,41 @@ async function startDevMode(
                 const srcPath =
                     typeof mapping === 'string' ? mapping : mapping.webpage
                 if (!pagesByUrlPath[urlPath]) {
+                    LOG({
+                        realm: 'config',
+                        message: 'added page',
+                        data: {
+                            urlPath,
+                            srcPath,
+                        },
+                    })
                     await addPage(urlPath, srcPath)
                 } else {
                     prevPages.delete(urlPath)
                     if (pagesByUrlPath[urlPath].fsPath !== srcPath) {
+                        LOG({
+                            realm: 'config',
+                            message: 'updated page src',
+                            data: {
+                                urlPath,
+                                newSrcPath: srcPath,
+                                oldSrcPath: pagesByUrlPath[urlPath].fsPath,
+                            },
+                        })
                         await updatePage(urlPath)
                     }
                 }
             }),
         )
         for (const prevPage of Array.from(prevPages)) {
+            LOG({
+                realm: 'config',
+                message: 'removed page',
+                data: {
+                    urlPath: prevPage,
+                    srcPath: c.pages[prevPage as `/${string}`] as string,
+                },
+            })
             delete c.pages[prevPage as `/${string}`]
             deletePage(prevPage)
         }
@@ -122,6 +157,13 @@ async function startDevMode(
     })
 
     watch(serve.dirs.pages, signal, filename => {
+        LOG({
+            realm: 'serve',
+            message: 'pages dir watch event',
+            data: {
+                file: filename,
+            },
+        })
         if (extname(filename) === '.html') {
             for (const [urlPath, srcPath] of Object.entries(c.pages)) {
                 if (srcPath === filename) {
@@ -167,23 +209,56 @@ async function startDevMode(
                     pathsIn,
                 )
             ) {
+                LOG({
+                    realm: 'serve',
+                    message: 'html entrypoints event',
+                    data: {
+                        previous:
+                            entryPointsByUrlPath[urlPath]?.pathsIn || null,
+                        new: pathsIn,
+                    },
+                })
                 entryPointsByUrlPath[urlPath] = { entrypoints, pathsIn }
                 resetBuildContext()
             }
         })
         htmlEntrypoint.on('partial', partial => {
+            LOG({
+                realm: 'serve',
+                message: 'html partial event',
+                data: {
+                    webpage: htmlEntrypoint.fsPath,
+                    partial,
+                },
+            })
             if (!partialsByUrlPath[urlPath]) {
                 partialsByUrlPath[urlPath] = []
             }
             partialsByUrlPath[urlPath].push(partial)
         })
-        htmlEntrypoint.on(
-            'partials',
-            partials => (partialsByUrlPath[urlPath] = partials),
-        )
-        htmlEntrypoint.on('output', html =>
-            writeFile(join(serve.dirs.buildWatch, urlPath, 'index.html'), html),
-        )
+        htmlEntrypoint.on('partials', partials => {
+            LOG({
+                realm: 'serve',
+                message: 'html partials event',
+                data: {
+                    allPartials: partials.length === 0,
+                    partials,
+                },
+            })
+            partialsByUrlPath[urlPath] = partials
+        })
+        htmlEntrypoint.on('output', html => {
+            const path = join(serve.dirs.buildWatch, urlPath, 'index.html')
+            LOG({
+                realm: 'serve',
+                message: 'html output event',
+                data: {
+                    webpage: htmlEntrypoint.fsPath,
+                    path,
+                },
+            })
+            writeFile(path, html)
+        })
     }
 
     function deletePage(urlPath: string) {
@@ -227,6 +302,7 @@ async function startDevMode(
                 return
         }
         if (buildContext !== null) {
+            LOG({ realm: 'serve', message: 'disposing esbuild context' })
             const disposing = buildContext.dispose()
             buildContext = 'disposing'
             disposing.then(() => {
@@ -297,6 +373,13 @@ async function startEsbuildWatch(
     serve: DankServe,
     entryPoints: Array<EntryPoint>,
 ): Promise<BuildContext> {
+    LOG({
+        realm: 'serve',
+        message: 'starting esbuild watch',
+        data: {
+            entrypoints: entryPoints.map(ep => ep.in),
+        },
+    })
     const ctx = await esbuildDevContext(
         serve,
         registry,
