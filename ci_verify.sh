@@ -57,7 +57,7 @@ echo '\n*** @eighty4/dank: tsc ***'
 pnpm typecheck
 
 echo '\n*** @eighty4/dank: dank build ***'
-pnpm build
+pnpm build:release
 
 echo '\n*** @eighty4/dank: test ***'
 pnpm test

@@ -124,7 +124,7 @@ jobs:
           registry-url: https://registry.npmjs.org
       - uses: pnpm/action-setup@v4
       - run: pnpm i
-      - run: pnpm run build
+      - run: pnpm run build:release
       - name: publish
         if: ${{ !inputs.dry-run }}
         run: pnpm publish --access public --no-git-checks --tag $NPM_TAG

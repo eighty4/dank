@@ -5,6 +5,9 @@
     "license": "MIT",
     "author": "Adam McKee Bennett <adam.be.g84d@gmail.com>",
     "packageManager": "pnpm@10.21.0",
+    "engines": {
+        "node": ">=24"
+    },
     "description": "Multi-page development system for CDN-deployed websites",
     "keywords": [
         "frontend",
@@ -26,6 +29,7 @@
     },
     "scripts": {
         "build": "tsc && tsc -p tsconfig.client.json && tsc -p tsconfig.exports.json",
+        "build:release": "pnpm build && ./scripts/prepare_release.ts",
         "fmt": "prettier --write .",
         "fmtcheck": "prettier --check .",
         "test": "node --test \"test/**/*.test.ts\"",
