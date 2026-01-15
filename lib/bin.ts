@@ -71,7 +71,7 @@ const task: 'build' | 'serve' = (function resolveTask() {
     return task
 })()
 
-const c = await loadConfig()
+const c = await loadConfig(task)
 
 try {
     switch (task) {

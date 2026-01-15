@@ -87,7 +87,7 @@ const isPreviewBuild = () =>
 
 // `dank build` will minify sources and append git release tag to build tag
 // `dank serve` will pre-bundle with service worker and minify
-const isProductionBuild = () =>
+export const isProductionBuild = () =>
     process.env.PRODUCTION === 'true' || process.argv.includes('--production')
 
 // `dank serve` dank port for frontend webserver

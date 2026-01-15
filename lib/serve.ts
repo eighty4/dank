@@ -43,7 +43,7 @@ async function startPreviewMode(
     serve: DankServe,
     signal: AbortSignal,
 ) {
-    const manifest = await buildWebsite(c, serve)
+    const manifest = await buildWebsite(c)
     const frontend = createBuiltDistFilesFetcher(serve.dirs.buildDist, manifest)
     const devServices = startDevServices(c, signal)
     startWebServer(serve, frontend, devServices.http, {
@@ -104,7 +104,7 @@ async function startDevMode(
     watch('dank.config.ts', signal, async () => {
         let updated: DankConfig
         try {
-            updated = await loadConfig()
+            updated = await loadConfig('serve')
         } catch (ignore) {
             return
         }

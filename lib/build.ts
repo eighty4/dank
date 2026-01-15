@@ -9,10 +9,8 @@ import { HtmlEntrypoint } from './html.ts'
 import { type WebsiteManifest, WebsiteRegistry } from './metadata.ts'
 import { copyAssets } from './public.ts'
 
-export async function buildWebsite(
-    c: DankConfig,
-    build: DankBuild = resolveBuildFlags(),
-): Promise<WebsiteManifest> {
+export async function buildWebsite(c: DankConfig): Promise<WebsiteManifest> {
+    const build: DankBuild = resolveBuildFlags()
     const buildTag = await createBuildTag(build)
     console.log(
         build.minify
