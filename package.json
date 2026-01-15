@@ -4,7 +4,7 @@
     "type": "module",
     "license": "MIT",
     "author": "Adam McKee Bennett <adam.be.g84d@gmail.com>",
-    "packageManager": "pnpm@10.21.0",
+    "packageManager": "pnpm@10.28.0",
     "engines": {
         "node": ">=24"
     },
