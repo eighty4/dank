@@ -78,11 +78,18 @@ export async function dankBuild(cwd: string): Promise<void> {
     })
 }
 
-export async function dankServe(cwd: string): Promise<DankServing> {
+export async function dankServe(
+    cwd: string,
+    preview: boolean = false,
+): Promise<DankServing> {
     const dankPort = await getAvailablePort()
     const esbuildPort = await getAvailablePort(dankPort)
-    const serving = new DankServing(cwd, dankPort, esbuildPort)
+    const serving = new DankServing(cwd, dankPort, esbuildPort, preview)
     return serving
+}
+
+export async function dankServePreview(cwd: string): Promise<DankServing> {
+    return await dankServe(cwd, true)
 }
 
 export type DankServingEvents = {
@@ -93,22 +100,22 @@ export type DankServingEvents = {
 export class DankServing extends EventEmitter<DankServingEvents> {
     #cwd: string
     #dankPort: number
-    #debug: boolean
     #esbuildPort: number
     #output: string = ''
+    #preview: boolean
     #process: ChildProcessWithoutNullStreams | null = null
 
     constructor(
         cwd: string,
         dankPort: number,
         esbuildPort: number,
-        debug: boolean = false,
+        preview: boolean,
     ) {
         super()
         this.#cwd = cwd
         this.#dankPort = dankPort
-        this.#debug = debug
         this.#esbuildPort = esbuildPort
+        this.#preview = preview
     }
 
     async start() {
@@ -117,7 +124,11 @@ export class DankServing extends EventEmitter<DankServingEvents> {
             DANK_PORT: `${this.dankPort}`,
             ESBUILD_PORT: `${this.esbuildPort}`,
         }
-        this.#process = spawn('npm', ['run', 'dev'], { cwd: this.#cwd, env })
+        const args = ['run', 'dev']
+        if (this.#preview) {
+            args.push('--', '--preview')
+        }
+        this.#process = spawn('npm', args, { cwd: this.#cwd, env })
         this.#process.stdout.on('data', chunk =>
             this.#appendOutput(chunk.toString()),
         )
@@ -138,11 +149,16 @@ export class DankServing extends EventEmitter<DankServingEvents> {
                     'exit',
                     Error('`dank serve` exited with non-zero exit code'),
                 )
+                if (DEBUG) {
+                    console.log(this.#output)
+                }
             }
         })
         try {
             await waitForPort(this.dankPort)
-            await waitForEsbuildServe(this.esbuildPort)
+            if (!this.#preview) {
+                await waitForEsbuildServe(this.esbuildPort)
+            }
         } catch (e) {
             throw Error('failed waiting for `dank serve` to be ready', {
                 cause: e,
@@ -168,7 +184,7 @@ export class DankServing extends EventEmitter<DankServingEvents> {
     }
 
     [Symbol.dispose]() {
-        if (this.#debug)
+        if (DEBUG)
             console.debug('disposing `dank serve` process and event emitters')
         this.#process?.removeAllListeners()
         this.#process?.stdout.removeAllListeners()

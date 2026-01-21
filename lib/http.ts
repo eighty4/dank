@@ -115,7 +115,11 @@ function tryUrlRewrites(
         urlRewrite.pattern.test(url.pathname),
     )
     return urlRewrite
-        ? join(serve.dirs.buildWatch, urlRewrite.url, 'index.html')
+        ? join(
+              serve.preview ? serve.dirs.buildDist : serve.dirs.buildWatch,
+              urlRewrite.url,
+              'index.html',
+          )
         : null
 }
 
