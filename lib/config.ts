@@ -6,15 +6,45 @@ import type {
     PageMapping,
 } from './dank.ts'
 import { LOG } from './developer.ts'
-import { isProductionBuild } from './flags.ts'
+import { defaultProjectDirs, type DankDirectories } from './dirs.ts'
+import {
+    resolveFlags as lookupDankFlags,
+    type DankFlags as DankFlags,
+} from './flags.ts'
 
-const CFG_P = './dank.config.ts'
+const DEFAULT_DEV_PORT = 3000
+const DEFAULT_PREVIEW_PORT = 4000
+const DEFAULT_ESBUILD_PORT = 3995
+
+const DEFAULT_CONFIG_PATH = './dank.config.ts'
+
+export type { DevService } from './dank.ts'
+
+export type ResolvedDankConfig = {
+    // static from process boot
+    get dirs(): Readonly<DankDirectories>
+    get flags(): Readonly<Omit<DankFlags, 'dankPort' | 'esbuildPort'>>
+    get mode(): 'build' | 'serve'
+
+    // reloadable from `dank.config.ts` with `reload()`
+    get dankPort(): number
+    get esbuildPort(): number
+    get esbuild(): Readonly<Omit<EsbuildConfig, 'port'>> | undefined
+    get pages(): Readonly<Record<`/${string}`, PageMapping>>
+    get devPages(): Readonly<DankConfig['devPages']>
+    get services(): Readonly<DankConfig['services']>
+
+    reload(): Promise<void>
+}
 
 export async function loadConfig(
     mode: 'build' | 'serve',
-    path: string = CFG_P,
-): Promise<DankConfig> {
-    const modulePath = resolveConfigPath(path)
+    projectRootAbs: string,
+): Promise<ResolvedDankConfig> {
+    if (!isAbsolute(projectRootAbs)) {
+        throw Error()
+    }
+    const modulePath = resolve(projectRootAbs, DEFAULT_CONFIG_PATH)
     LOG({
         realm: 'config',
         message: 'loading config module',
@@ -22,37 +52,119 @@ export async function loadConfig(
             modulePath,
         },
     })
-    const c = await resolveConfig(mode, modulePath)
-    normalizePagePaths(c.pages)
+    const dirs = await defaultProjectDirs(projectRootAbs)
+    const c = new DankConfigInternal(mode, modulePath, dirs)
+    await c.reload()
     return c
 }
 
-export function resolveConfigPath(path: string): string {
-    if (isAbsolute(path)) {
-        return path
-    } else {
-        return resolve(process.cwd(), path)
+class DankConfigInternal implements ResolvedDankConfig {
+    #dirs: Readonly<DankDirectories>
+    #flags: Readonly<DankFlags>
+    #mode: 'build' | 'serve'
+    #modulePath: string
+
+    #dankPort: number = DEFAULT_DEV_PORT
+    #esbuildPort: number = DEFAULT_ESBUILD_PORT
+    #esbuild: Readonly<Omit<EsbuildConfig, 'port'>> | undefined
+    #pages: Readonly<Record<`/${string}`, PageMapping>> = {}
+    #devPages: Readonly<DankConfig['devPages']>
+    #services: Readonly<DankConfig['services']>
+
+    constructor(
+        mode: 'build' | 'serve',
+        modulePath: string,
+        dirs: DankDirectories,
+    ) {
+        this.#dirs = dirs
+        this.#flags = lookupDankFlags()
+        this.#mode = mode
+        this.#modulePath = modulePath
+    }
+
+    get dankPort(): number {
+        return this.#dankPort
+    }
+
+    get esbuildPort(): number {
+        return this.#esbuildPort
+    }
+
+    get esbuild(): Omit<EsbuildConfig, 'port'> | undefined {
+        return this.#esbuild
+    }
+
+    get dirs(): Readonly<DankDirectories> {
+        return this.#dirs
+    }
+
+    get flags(): Readonly<Omit<DankFlags, 'dankPort' | 'esbuildPort'>> {
+        return this.#flags
+    }
+
+    get mode(): 'build' | 'serve' {
+        return this.#mode
+    }
+
+    get pages(): Readonly<Record<`/${string}`, PageMapping>> {
+        return this.#pages
+    }
+
+    get devPages(): Readonly<DankConfig['devPages']> {
+        return this.#devPages
+    }
+
+    get services(): Readonly<DankConfig['services']> {
+        return this.#services
+    }
+
+    async reload() {
+        const userConfig = await resolveConfig(
+            this.#modulePath,
+            resolveDankDetails(this.#mode, this.#flags),
+        )
+        this.#dankPort = resolveDankPort(this.#flags, userConfig)
+        this.#esbuildPort = resolveEsbuildPort(this.#flags, userConfig)
+        this.#esbuild = Object.freeze(userConfig.esbuild)
+        this.#pages = Object.freeze(normalizePages(userConfig.pages))
+        this.#devPages = Object.freeze(userConfig.devPages)
+        this.#services = Object.freeze(userConfig.services)
     }
 }
 
-export async function resolveConfig(
-    mode: 'build' | 'serve',
+function resolveDankPort(flags: DankFlags, userConfig: DankConfig): number {
+    return (
+        flags.dankPort ||
+        (flags.preview
+            ? userConfig.previewPort || userConfig.port || DEFAULT_PREVIEW_PORT
+            : userConfig.port || DEFAULT_DEV_PORT)
+    )
+}
+
+function resolveEsbuildPort(flags: DankFlags, userConfig: DankConfig): number {
+    return flags.esbuildPort || userConfig.esbuild?.port || DEFAULT_ESBUILD_PORT
+}
+
+async function resolveConfig(
     modulePath: string,
+    details: DankDetails,
 ): Promise<DankConfig> {
     const module = await import(`${modulePath}?${Date.now()}`)
     const c: Partial<DankConfig> =
         typeof module.default === 'function'
-            ? await module.default(resolveDankDetails(mode))
+            ? await module.default(details)
             : module.default
     validateDankConfig(c)
     return c as DankConfig
 }
 
-function resolveDankDetails(mode: 'build' | 'serve'): DankDetails {
-    const production = isProductionBuild()
+function resolveDankDetails(
+    mode: 'build' | 'serve',
+    flags: DankFlags,
+): DankDetails {
     return {
-        dev: !production,
-        production,
+        dev: !flags.production,
+        production: flags.production,
         mode,
     }
 }
@@ -61,6 +173,7 @@ function validateDankConfig(c: Partial<DankConfig>) {
     try {
         validatePorts(c)
         validatePages(c.pages)
+        validateDevPages(c.devPages)
         validateDevServices(c.services)
         validateEsbuildConfig(c.esbuild)
     } catch (e: any) {
@@ -140,6 +253,46 @@ function validatePages(pages?: DankConfig['pages']) {
     }
 }
 
+function validateDevPages(devPages?: DankConfig['devPages']) {
+    if (devPages) {
+        for (const [urlPath, mapping] of Object.entries(devPages)) {
+            if (!urlPath.startsWith('/__')) {
+                throw Error(
+                    `DankConfig.devPages['${urlPath}'] must start \`${urlPath}\` with a \`/__\` path prefix`,
+                )
+            }
+            if (typeof mapping === 'string') {
+                if (!mapping.endsWith('.html')) {
+                    throw Error(
+                        `DankConfig.devPages['${urlPath}'] must configure an html file or DevPageMapping config`,
+                    )
+                }
+            } else if (typeof mapping === 'object') {
+                if (
+                    typeof mapping.label !== 'string' ||
+                    !mapping.label.length
+                ) {
+                    throw Error(
+                        `DankConfig.devPages['${urlPath}'].label must declare a label`,
+                    )
+                }
+                if (
+                    typeof mapping.webpage !== 'string' ||
+                    !mapping.webpage.endsWith('.html')
+                ) {
+                    throw Error(
+                        `DankConfig.devPages['${urlPath}'].webpage must configure an html file`,
+                    )
+                }
+            } else {
+                throw Error(
+                    `DankConfig.devPages['${urlPath}'] must be a DevPageMapping config with \`label\` and \`webpage\` values`,
+                )
+            }
+        }
+    }
+}
+
 function validatePageMapping(urlPath: string, mapping: PageMapping) {
     if (
         mapping.webpage === null ||
@@ -209,16 +362,18 @@ function validateDevServices(services: DankConfig['services']) {
     }
 }
 
-function normalizePagePaths(pages: DankConfig['pages']) {
+function normalizePages(
+    pages: DankConfig['pages'],
+): Record<`/${string}`, PageMapping> {
+    const result: Record<`/${string}`, PageMapping> = {}
     for (const [pageUrl, mapping] of Object.entries(pages)) {
-        if (typeof mapping === 'string') {
-            pages[pageUrl as `/${string}`] = normalizePagePath(mapping)
-        } else {
-            mapping.webpage = normalizePagePath(mapping.webpage)
-        }
+        const mappedMapping =
+            typeof mapping === 'string' ? { webpage: mapping } : mapping
+        mappedMapping.webpage = mappedMapping.webpage.replace(
+            /^\.\//,
+            '',
+        ) as `${string}.html`
+        result[pageUrl as `/${string}`] = mappedMapping
     }
-}
-
-function normalizePagePath(p: `${string}.html`): `${string}.html` {
-    return p.replace(/^\.\//, '') as `${string}.html`
+    return result
 }

@@ -4,6 +4,9 @@ import os from 'node:os'
 import { dirname, resolve } from 'node:path'
 import packageJson from '../package.json' with { type: 'json' }
 
+const CONSOLE =
+    process.env.DANK_LOG_CONSOLE === '1' ||
+    process.env.DANK_LOG_CONSOLE === 'true'
 const FILE = process.env.DANK_LOG_FILE
 const ROLLING =
     process.env.DANK_LOG_ROLLING === '1' ||
@@ -70,6 +73,15 @@ function toStringData(datum: LogEventData): string {
     }
 }
 
+function logToConsoleAndFile(logEvent: LogEvent) {
+    logToConsole(logEvent)
+    logToFile(logEvent)
+}
+
+function logToConsole(logEvent: LogEvent) {
+    console.log(toStringLogEvent(logEvent))
+}
+
 function logToFile(logEvent: LogEvent) {
     logs.push(toStringLogEvent(logEvent))
     if (!initialized) {
@@ -114,4 +126,15 @@ function onPrepareLogFileError(e: any) {
     process.exit(1)
 }
 
-export const LOG = FILE?.length ? logToFile : () => {}
+export const LOG = (function resolveLogFn() {
+    if (CONSOLE && FILE?.length) {
+        return logToConsoleAndFile
+    }
+    if (CONSOLE) {
+        return logToConsole
+    }
+    if (FILE?.length) {
+        return logToFile
+    }
+    return () => {}
+})()

@@ -1,28 +1,215 @@
+import assert from 'node:assert'
 import {
     type ChildProcessWithoutNullStreams,
     exec,
     spawn,
 } from 'node:child_process'
 import EventEmitter from 'node:events'
-import { readFile, realpath, mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { readFile, mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { waitForEsbuildServe } from './esbuild_events_testing.ts'
 import { getAvailablePort, waitForPort } from './ports.ts'
-import { defaultProjectDirs, type DankBuild } from '../lib/flags.ts'
+import {
+    defaultProjectDirs,
+    Resolver,
+    type DankDirectories,
+} from '../lib/dirs.ts'
+import { loadConfig, type ResolvedDankConfig } from '../lib/config.ts'
 
 const DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true'
 
-export async function testDir(): Promise<DankBuild['dirs']> {
-    const dir = await realpath(await mkdtemp(join(tmpdir(), 'dank-test-')))
-    const dirs = defaultProjectDirs(dir)
-    await mkdir(join(dir, dirs.pages))
-    await mkdir(join(dir, dirs.public))
-    return dirs
+export type DankProjectScaffolding = {
+    // files to write to project dir from project root
+    files?: Record<string, DankCreated | string>
+    // html files to declare in `dank.config.ts`
+    pages?: Record<`/${string}`, `./${string}.html`>
 }
 
-export async function createDank(): Promise<string> {
+// scaffold a file from the `dank create` generated sources
+export class DankCreated {
+    #src: 'pages/dank.html' | 'pages/dank.css' | 'pages/dank.js'
+    #ops: Array<{
+        kind: 'replace'
+        pattern: RegExp
+        replace: string
+    }>
+
+    static get html(): DankCreated {
+        return new DankCreated('pages/dank.html')
+    }
+
+    static get css(): DankCreated {
+        return new DankCreated('pages/dank.html')
+    }
+
+    static get js(): DankCreated {
+        return new DankCreated('pages/dank.html')
+    }
+
+    private constructor(
+        src: 'pages/dank.html' | 'pages/dank.css' | 'pages/dank.js',
+    ) {
+        this.#src = src
+        this.#ops = []
+    }
+
+    replace(pattern: RegExp, replace: string): this {
+        this.#ops.push({
+            kind: 'replace',
+            pattern,
+            replace,
+        })
+        return this
+    }
+
+    async result(dir: string): Promise<string> {
+        let result = await readFile(join(dir, this.#src), 'utf8')
+        for (const op of this.#ops) {
+            if (op.kind === 'replace') {
+                result = result.replace(op.pattern, op.replace)
+            } else {
+                throw Error(op.kind)
+            }
+        }
+        return result
+    }
+}
+
+// gen `dank.config.ts` and project files from DankProjectScaffolding
+async function setupScaffolding(
+    dir: string,
+    scaffolding?: DankProjectScaffolding,
+) {
+    if (scaffolding?.pages) {
+        if (!scaffolding?.files)
+            throw Error(
+                `scaffolding pages requires including file content with DankProjectScaffolding['files']`,
+            )
+        const missingFiles = Object.values(scaffolding.pages).filter(
+            fsPath =>
+                fsPath !== './dank.html' &&
+                !scaffolding.files![fsPath.replace('./', 'pages/')],
+        )
+        if (missingFiles.length)
+            throw Error(
+                `scaffolding pages [${missingFiles.join(', ')}] requires including file content with DankProjectScaffolding['files']`,
+            )
+        await writeFile(
+            join(dir, 'dank.config.ts'),
+            `export default ${JSON.stringify({ pages: scaffolding.pages })}`,
+        )
+    }
+    if (scaffolding?.files) {
+        await writeScaffoldingFiles(dir, scaffolding.files)
+    }
+}
+
+async function writeScaffoldingFiles(
+    dir: string,
+    files: NonNullable<DankProjectScaffolding['files']>,
+) {
+    await Promise.all(
+        Object.entries(files).map(async ([path, content]) => {
+            await writeScaffoldingFile(dir, path, content)
+        }),
+    )
+}
+
+async function writeScaffoldingFile(
+    dir: string,
+    path: string,
+    content: DankCreated | string,
+) {
+    const filepath = join(dir, path)
+    await mkdir(dirname(filepath), { recursive: true })
+    if (typeof content === 'string') {
+        await writeFile(filepath, content)
+    } else {
+        await writeFile(filepath, await content.result(dir))
+    }
+}
+
+export type DankProjectShim = {
+    dirs: DankDirectories
+    resolver: Resolver
+}
+
+// lightweight testing against source files
+// that do not require running `dank build` or `dank serve`
+export async function testDir(
+    scaffolding?: DankProjectScaffolding,
+): Promise<DankProjectShim> {
+    const dir = await mkdtemp(join(tmpdir(), 'dank-test-'))
+    await Promise.all([mkdir(join(dir, 'pages')), mkdir(join(dir, 'public'))])
+    await setupScaffolding(dir, scaffolding)
+    const dirs = await defaultProjectDirs(dir)
+    return { dirs, resolver: new Resolver(dirs) }
+}
+
+class DankTestProject {
+    #dir: string
+
+    constructor(dir: string) {
+        this.#dir = dir
+    }
+
+    get dir(): string {
+        return this.#dir
+    }
+
+    async loadConfig(
+        mode: 'build' | 'serve' = 'build',
+    ): Promise<ResolvedDankConfig> {
+        return await loadConfig(mode, this.#dir)
+    }
+
+    async writeConfig(
+        dankConfigTs: string,
+        waitForConfigReload: number | false = 100,
+    ) {
+        await writeFile(this.path('dank.config.ts'), dankConfigTs)
+        if (waitForConfigReload) {
+            await new Promise(res => setTimeout(res, waitForConfigReload))
+        }
+    }
+
+    async build(): Promise<void> {
+        await dankBuild(this.#dir)
+    }
+
+    path(...p: Array<string>): string {
+        return join(this.#dir, ...p)
+    }
+
+    async update(path: string, content: DankCreated | string) {
+        await writeScaffoldingFile(this.#dir, path, content)
+    }
+
+    async updates(files: NonNullable<DankProjectScaffolding['files']>) {
+        await writeScaffoldingFiles(this.#dir, files)
+    }
+
+    async serve(preview?: boolean): Promise<DankServing> {
+        return await dankServe(this.#dir, preview)
+    }
+
+    async servePreview(): Promise<DankServing> {
+        return await this.serve(true)
+    }
+}
+
+export async function createDank(
+    scaffolding?: DankProjectScaffolding,
+): Promise<DankTestProject> {
     const dir = join(await mkdtemp(join(tmpdir(), 'dank-test-')), 'www')
+    await npmCreateDank(dir)
+    await npmInstall(dir)
+    await setupScaffolding(dir, scaffolding)
+    return new DankTestProject(dir)
+}
+
+async function npmCreateDank(dir: string) {
     await new Promise<void>((res, rej) => {
         exec(
             `node create-dank/create.ts --out-dir ${dir} 2>&1`,
@@ -40,6 +227,9 @@ export async function createDank(): Promise<string> {
             },
         )
     })
+}
+
+async function npmInstall(dir: string) {
     await readReplaceWrite(
         join(dir, 'package.json'),
         /"@eighty4\/dank": ".*"/,
@@ -55,16 +245,15 @@ export async function createDank(): Promise<string> {
                 res()
             }
         })
-        const TIMEOUT = 3000
+        const TIMEOUT = 10000
         timeout = setTimeout(() => {
             npmInstall.kill()
             rej(Error(`failed \`npm i\`: timed out after ${TIMEOUT / 1000}s`))
         }, TIMEOUT)
     })
-    return dir
 }
 
-export async function dankBuild(cwd: string): Promise<void> {
+async function dankBuild(cwd: string): Promise<void> {
     await new Promise<void>((res, rej) => {
         exec('npm run build 2>&1', { cwd }, (err, stdout) => {
             if (err) {
@@ -78,7 +267,7 @@ export async function dankBuild(cwd: string): Promise<void> {
     })
 }
 
-export async function dankServe(
+async function dankServe(
     cwd: string,
     preview: boolean = false,
 ): Promise<DankServing> {
@@ -86,10 +275,6 @@ export async function dankServe(
     const esbuildPort = await getAvailablePort(dankPort)
     const serving = new DankServing(cwd, dankPort, esbuildPort, preview)
     return serving
-}
-
-export async function dankServePreview(cwd: string): Promise<DankServing> {
-    return await dankServe(cwd, true)
 }
 
 export type DankServingEvents = {
@@ -116,6 +301,40 @@ export class DankServing extends EventEmitter<DankServingEvents> {
         this.#dankPort = dankPort
         this.#esbuildPort = esbuildPort
         this.#preview = preview
+    }
+
+    async assertFetch(
+        path: `/${string}`,
+        cb: (r: Response) => Promise<void> | void,
+    ) {
+        await cb(await fetch(`http://localhost:${this.#dankPort}${path}`))
+    }
+
+    async assertFetchStatus(path: `/${string}`, status: number) {
+        await this.assertFetch(path, r => assert.equal(r.status, status))
+    }
+
+    async assertFetchText(
+        path: `/${string}`,
+        pattern: RegExp | string | ((text: string) => Promise<void> | void),
+    ) {
+        await this.assertFetch(path, async r => {
+            assert.equal(r.status, 200)
+            const text = await r.text()
+            if (typeof pattern === 'function') {
+                await pattern(text)
+            } else if (typeof pattern === 'string') {
+                assert.ok(
+                    text.includes(pattern),
+                    `expected ${path} to include pattern \`${pattern}\``,
+                )
+            } else {
+                assert.ok(
+                    pattern.test(text),
+                    `expected ${path} to match pattern \`${pattern.source}\``,
+                )
+            }
+        })
     }
 
     async start() {
@@ -205,8 +424,12 @@ export async function readReplaceWrite(
     )
 }
 
-export async function readTest(p: string, pattern: RegExp): Promise<boolean> {
-    return pattern.test(await readFile(p, 'utf8'))
+export async function readTest(
+    p: string,
+    ...pattern: Array<RegExp>
+): Promise<boolean> {
+    const content = await readFile(p, 'utf8')
+    return pattern.every(pattern => pattern.test(content))
 }
 
 export async function fetchPageHtml(
@@ -214,5 +437,22 @@ export async function fetchPageHtml(
     path: `/${string}`,
     cb: (html: string) => void,
 ) {
-    cb(await fetch(`http://127.0.0.1:${dankPort}${path}`).then(r => r.text()))
+    const INTERVAL = 50
+    const TIMEOUT = 2000
+    let start = Date.now()
+    while (true) {
+        await new Promise(res => setTimeout(res, INTERVAL))
+        try {
+            cb(
+                await fetch(`http://127.0.0.1:${dankPort}${path}`).then(r =>
+                    r.text(),
+                ),
+            )
+            return
+        } catch (e) {
+            if (Date.now() - start > TIMEOUT) {
+                throw e
+            }
+        }
+    }
 }

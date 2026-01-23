@@ -5,23 +5,8 @@ import esbuild from 'esbuild'
 import type { Plugin, OnLoadArgs, PluginBuild } from 'esbuild'
 
 const projectDir = resolve(join(import.meta.dirname, '..'))
-const clientDir = join(projectDir, 'client')
 const libJsDir = join(projectDir, 'lib_js')
 await rm(join(libJsDir, 'developer.js'), { force: true })
-
-await esbuild.build({
-    logLevel: 'info',
-    allowOverwrite: true,
-    absWorkingDir: clientDir,
-    entryPoints: (await readdir(clientDir)).filter(f => f.endsWith('js')),
-    outdir: clientDir,
-    treeShaking: true,
-    target: 'ES2022',
-    bundle: false,
-    minify: true,
-    format: 'esm',
-    platform: 'browser',
-})
 
 await esbuild.build({
     logLevel: 'info',

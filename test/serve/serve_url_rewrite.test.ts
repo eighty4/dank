@@ -1,67 +1,65 @@
 import assert from 'node:assert/strict'
-import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { test } from 'node:test'
-import {
-    createDank,
-    dankServe,
-    dankServePreview,
-} from '../dank_project_testing.ts'
+import { suite, test } from 'node:test'
+import { createDank } from '../dank_project_testing.ts'
 
-test('matches url rewrite on page pattern', async () => {
-    const testDir = await createDank()
-    await writeFile(
-        join(testDir, 'dank.config.ts'),
-        `\
-export default {
-    pages: {
-        '/configure': {
-            pattern: /asdf/,
-            webpage: './Configure.html',
+suite('serving url rewrites', () => {
+    suite('on startup', () => {
+        test('matches page pattern', async () => {
+            const project = await createDank()
+            await project.writeConfig(`\
+    export default {
+        pages: {
+            '/configure': {
+                pattern: /asdf/,
+                webpage: './dank.html',
+            },
         },
-    },
-}
-`,
-    )
-    await writeFile(
-        join(testDir, 'pages', 'Configure.html'),
-        `<p>Configuring</p>`,
-    )
-    using dankServing = await dankServe(testDir)
-    dankServing.on('error', assert.fail)
-    dankServing.on('exit', assert.fail)
-    await dankServing.start()
-    for (const path of ['/asdf', '/configure']) {
-        const r = await fetch(`http://localhost:${dankServing.dankPort}${path}`)
-        assert.equal(r.status, 200)
-    }
-})
+    }`)
+            using dankServing = await project.serve()
+            dankServing.on('error', assert.fail)
+            dankServing.on('exit', assert.fail)
+            await dankServing.start()
+            await dankServing.assertFetchStatus('/asdf', 200)
+            await dankServing.assertFetchStatus('/configure', 200)
+        })
 
-test('resolves url rewrite html from preview dist', async () => {
-    const testDir = await createDank()
-    await writeFile(
-        join(testDir, 'dank.config.ts'),
-        `\
-export default {
-    pages: {
-        '/configure': {
-            pattern: /asdf/,
-            webpage: './Configure.html',
+        suite('--preview', () => {
+            test('matches page pattern', async () => {
+                const project = await createDank()
+                await project.writeConfig(`\
+    export default {
+        pages: {
+            '/configure': {
+                pattern: /asdf/,
+                webpage: './dank.html',
+            },
         },
-    },
-}
-`,
-    )
-    await writeFile(
-        join(testDir, 'pages', 'Configure.html'),
-        `<p>Configuring</p>`,
-    )
-    using dankServing = await dankServePreview(testDir)
-    dankServing.on('error', assert.fail)
-    dankServing.on('exit', assert.fail)
-    await dankServing.start()
-    for (const path of ['/asdf', '/configure']) {
-        const r = await fetch(`http://localhost:${dankServing.dankPort}${path}`)
-        assert.equal(r.status, 200)
-    }
+    }`)
+                using dankServing = await project.servePreview()
+                dankServing.on('error', assert.fail)
+                dankServing.on('exit', assert.fail)
+                await dankServing.start()
+                await dankServing.assertFetchStatus('/asdf', 200)
+                await dankServing.assertFetchStatus('/configure', 200)
+            })
+        })
+    })
+
+    suite('config reload', () => {
+        test('picks up url rewrite', async () => {
+            const project = await createDank()
+            using dankServing = await project.serve()
+            dankServing.on('error', assert.fail)
+            dankServing.on('exit', assert.fail)
+            await dankServing.start()
+            await dankServing.assertFetchStatus('/', 200)
+            await dankServing.assertFetchStatus('/asdf', 404)
+
+            await project.writeConfig(
+                `export default { pages: { '/': { pattern: /asdf/, webpage: './dank.html' } } }`,
+            )
+            await dankServing.assertFetchStatus('/', 200)
+            await dankServing.assertFetchStatus('/asdf', 200)
+        })
+    })
 })

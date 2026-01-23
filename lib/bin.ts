@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { buildWebsite } from './build.ts'
-import { loadConfig } from './config.ts'
 import { serveWebsite } from './serve.ts'
 
 function printHelp(task?: 'build' | 'serve'): never {
@@ -71,16 +70,14 @@ const task: 'build' | 'serve' = (function resolveTask() {
     return task
 })()
 
-const c = await loadConfig(task)
-
 try {
     switch (task) {
         case 'build':
-            await buildWebsite(c)
+            await buildWebsite()
             console.log(green('done'))
             process.exit(0)
         case 'serve':
-            await serveWebsite(c)
+            await serveWebsite()
     }
 } catch (e: unknown) {
     errorExit(e)

@@ -4,7 +4,9 @@
         "lib": ["DOM", "DOM.Iterable", "ESNext"],
         "declaration": false,
         "rootDir": "client",
-        "outDir": "client"
+        "outDir": "client",
+        "noEmit": true
     },
-    "include": ["client/esbuild.ts"]
+    "files": ["client/Client.d.ts"],
+    "include": ["client/*.ts"]
 }

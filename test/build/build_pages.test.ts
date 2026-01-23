@@ -1,144 +1,109 @@
 import assert from 'node:assert/strict'
-import { copyFile, mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { test } from 'node:test'
+import { suite, test } from 'node:test'
 import {
     createDank,
-    dankBuild,
+    DankCreated,
     readReplaceWrite,
     readTest,
 } from '../dank_project_testing.ts'
 
-test('html entrypoint rewrites hrefs', async () => {
-    const testDir = await createDank()
-    await dankBuild(testDir)
-    assert.ok(
-        await readTest(
-            join(testDir, 'build', 'dist', 'index.html'),
-            /<script src="\/dank-[A-Z\d]{8}\.js" type="module"><\/script>/,
-        ),
-        `js script not found in ${join(testDir, 'build', 'dist', 'index.html')}`,
-    )
-    assert.ok(
-        await readTest(
-            join(testDir, 'build', 'dist', 'index.html'),
-            /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
-        ),
-        `css link not found in ${join(testDir, 'build', 'dist', 'index.html')}`,
-    )
-})
+suite('building pages', () => {
+    suite('succeeds', () => {
+        test('rewriting hrefs', async () => {
+            const project = await createDank()
+            await project.build()
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', 'index.html'),
+                    /<script src="\/dank-[A-Z\d]{8}\.js" type="module"><\/script>/,
+                ),
+                `js script not found in ${project.path('build', 'dist', 'index.html')}`,
+            )
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', 'index.html'),
+                    /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
+                ),
+                `css link not found in ${project.path('build', 'dist', 'index.html')}`,
+            )
+        })
 
-test('html entrypoint at subpath url', async () => {
-    const testDir = await createDank()
-    await mkdir(join(testDir, 'pages', 'subdir'))
-    await Promise.all(
-        ['html', 'ts', 'css'].map(ext =>
-            copyFile(
-                join(testDir, 'pages', `dank.${ext}`),
-                join(testDir, 'pages', 'subdir', `dank.${ext}`),
-            ),
-        ),
-    )
-    await writeFile(
-        join(testDir, 'dank.config.ts'),
-        `\
-import { defineConfig } from '@eighty4/dank'
-
-export default defineConfig({
-    pages: {
-        '/': './dank.html',
-        '/subdir': './subdir/dank.html',
-    }
-})
+        test('resolves page and bundles configured in child dir', async () => {
+            const project = await createDank({
+                pages: {
+                    '/': './dank.html',
+                    '/subdir': './subdir/dank.html',
+                },
+                files: {
+                    'pages/subdir/dank.html': `\
+<link rel="stylesheet" href="./dank.css"/>
+<script src="./dank.ts" type="module"></script>
 `,
-    )
-    await dankBuild(testDir)
-    assert.ok(
-        await readTest(
-            join(testDir, 'build', 'dist', 'index.html'),
-            /<script src="\/dank-[A-Z\d]{8}\.js" type="module"><\/script>/,
-        ),
-        `js script not found in ${join(testDir, 'build', 'dist', 'index.html')}`,
-    )
-    assert.ok(
-        await readTest(
-            join(testDir, 'build', 'dist', 'index.html'),
-            /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
-        ),
-        `css link not found in ${join(testDir, 'build', 'dist', 'index.html')}`,
-    )
-    assert.ok(
-        await readTest(
-            join(testDir, 'build', 'dist', 'subdir', 'index.html'),
-            /<script src="\/subdir\/dank-[A-Z\d]{8}\.js" type="module"><\/script>/,
-        ),
-        `js script not found in ${join(testDir, 'build', 'dist', 'subdir', 'index.html')}`,
-    )
-    assert.ok(
-        await readTest(
-            join(testDir, 'build', 'dist', 'subdir', 'index.html'),
-            /<link rel="stylesheet" href="\/subdir\/dank-[A-Z\d]{8}\.css">/,
-        ),
-        `css link not found in ${join(testDir, 'build', 'dist', 'subdir', 'index.html')}`,
-    )
-})
+                    'pages/subdir/dank.css': `body { background: red; }`,
+                    'pages/subdir/dank.ts': `console.log(document.body.style.background)`,
+                },
+            })
+            await project.build()
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', 'index.html'),
+                    /<script src="\/dank-[A-Z\d]{8}\.js" type="module"><\/script>/,
+                    /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
+                ),
+                `bundles not found in ${project.path('build', 'dist', 'index.html')}`,
+            )
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', 'subdir', 'index.html'),
+                    /<script src="\/subdir\/dank-[A-Z\d]{8}\.js" type="module"><\/script>/,
+                    /<link rel="stylesheet" href="\/subdir\/dank-[A-Z\d]{8}\.css">/,
+                ),
+                `bundles not found in ${project.path('build', 'dist', 'subdir', 'index.html')}`,
+            )
+        })
 
-test('html entrypoint imports from parent dir', async () => {
-    const testDir = await createDank()
-    await mkdir(join(testDir, 'pages', 'subdir'))
-    await copyFile(
-        join(testDir, 'pages', 'dank.html'),
-        join(testDir, 'pages', 'subdir', 'dank.html'),
-    )
-    await readReplaceWrite(
-        join(testDir, 'pages', 'subdir', 'dank.html'),
-        /\.\/dank\.ts/,
-        '../dank.ts',
-    )
-    await readReplaceWrite(
-        join(testDir, 'pages', 'subdir', 'dank.html'),
-        /\.\/dank\.css/,
-        '../dank.css',
-    )
-    await writeFile(
-        join(testDir, 'dank.config.ts'),
-        `\
-import { defineConfig } from '@eighty4/dank'
+        test('resolves bundle in parent dir', async () => {
+            const project = await createDank({
+                pages: {
+                    '/': './dank.html',
+                    '/subdir': './subdir/dank.html',
+                },
+                files: {
+                    'pages/subdir/dank.html': DankCreated.html
+                        .replace(/\.\/dank\.ts/, '../dank.ts')
+                        .replace(/\.\/dank\.css/, '../dank.css'),
+                },
+            })
+            await project.build()
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', 'subdir', 'index.html'),
+                    /<script src="\/dank-[A-Z\d]{8}\.js" type="module"><\/script>/,
+                ),
+                `js script not found in ${project.path('build', 'dist', 'subdir', 'index.html')}`,
+            )
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', 'subdir', 'index.html'),
+                    /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
+                ),
+                `css link not found in ${project.path('build', 'dist', 'subdir', 'index.html')}`,
+            )
+        })
+    })
 
-export default defineConfig({
-    pages: {
-        '/': './dank.html',
-        '/subdir': './subdir/dank.html',
-    }
-})
-`,
-    )
-    await dankBuild(testDir)
-    assert.ok(
-        await readTest(
-            join(testDir, 'build', 'dist', 'subdir', 'index.html'),
-            /<script src="\/dank-[A-Z\d]{8}\.js" type="module"><\/script>/,
-        ),
-        `js script not found in ${join(testDir, 'build', 'dist', 'subdir', 'index.html')}`,
-    )
-    assert.ok(
-        await readTest(
-            join(testDir, 'build', 'dist', 'subdir', 'index.html'),
-            /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
-        ),
-        `css link not found in ${join(testDir, 'build', 'dist', 'subdir', 'index.html')}`,
-    )
-})
-
-test('html entrypoint errors when importing from parent dir of pages dir', async () => {
-    const testDir = await createDank()
-    await readReplaceWrite(
-        join(testDir, 'pages', 'dank.html'),
-        /\.\/dank\.ts/,
-        '../dank.ts',
-    )
-    try {
-        await dankBuild(testDir)
-        assert.fail('build should have failed')
-    } catch (e) {}
+    suite('errors', () => {
+        test('importing from parent dir of pages dir', async () => {
+            const project = await createDank()
+            await readReplaceWrite(
+                project.path('pages', 'dank.html'),
+                /\.\/dank\.ts/,
+                '../dank.ts',
+            )
+            try {
+                await project.build()
+                assert.fail('build should have failed')
+            } catch (e) {}
+        })
+    })
 })

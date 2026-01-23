@@ -13,6 +13,8 @@ export type DankConfig = {
     // cdn url rewriting can be simulated with PageMapping
     pages: Record<`/${string}`, `${string}.html` | PageMapping>
 
+    devPages?: Record<`/__${string}`, `${string}.html` | DevPageMapping>
+
     // port of `dank serve` frontend dev server
     // used for `dan serve --preview` if previewPort not specified
     port?: number
@@ -29,6 +31,11 @@ export type DankConfig = {
 // will be tested in the alphabetical order of the webpage paths
 export type PageMapping = {
     pattern?: RegExp
+    webpage: `${string}.html`
+}
+
+export type DevPageMapping = {
+    label: string
     webpage: `${string}.html`
 }
 

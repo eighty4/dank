@@ -1,59 +1,41 @@
-import {
-    mkdir,
-    readFile,
-    rm,
-    watch as _watch,
-    writeFile,
-} from 'node:fs/promises'
-import { extname, join, resolve } from 'node:path'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { extname, join } from 'node:path'
 import type { BuildContext } from 'esbuild'
 import { buildWebsite } from './build.ts'
-import { loadConfig } from './config.ts'
-import type { DankConfig } from './dank.ts'
+import { loadConfig, type ResolvedDankConfig } from './config.ts'
 import { createGlobalDefinitions } from './define.ts'
 import { LOG } from './developer.ts'
-import { esbuildDevContext, type EntryPoint } from './esbuild.ts'
-import { resolveServeFlags, type DankServe } from './flags.ts'
-import { HtmlEntrypoint } from './html.ts'
+import { esbuildDevContext } from './esbuild.ts'
+import type { HtmlEntrypoint } from './html.ts'
 import {
     createBuiltDistFilesFetcher,
     createDevServeFilesFetcher,
     startWebServer,
-    type PageRouteState,
-    type UrlRewrite,
 } from './http.ts'
-import { WebsiteRegistry } from './metadata.ts'
+import { WebsiteRegistry, type UrlRewrite } from './registry.ts'
 import { startDevServices, updateDevServices } from './services.ts'
+import { watch } from './watch.ts'
 
-export async function serveWebsite(c: DankConfig): Promise<never> {
-    const serve = resolveServeFlags(c)
-    await rm(serve.dirs.buildRoot, { force: true, recursive: true })
+let c: ResolvedDankConfig
+
+export async function serveWebsite(): Promise<never> {
+    c = await loadConfig('serve', process.cwd())
+    await rm(c.dirs.buildRoot, { force: true, recursive: true })
     const abortController = new AbortController()
     process.once('exit', () => abortController.abort())
-    if (serve.preview) {
-        await startPreviewMode(c, serve, abortController.signal)
+    if (c.flags.preview) {
+        await startPreviewMode(abortController.signal)
     } else {
-        await startDevMode(c, serve, abortController.signal)
+        await startDevMode(abortController.signal)
     }
     return new Promise(() => {})
 }
 
-async function startPreviewMode(
-    c: DankConfig,
-    serve: DankServe,
-    signal: AbortSignal,
-) {
+async function startPreviewMode(signal: AbortSignal) {
     const manifest = await buildWebsite(c)
-    const frontend = createBuiltDistFilesFetcher(serve.dirs.buildDist, manifest)
-    const devServices = startDevServices(c, signal)
-    startWebServer(serve, frontend, devServices.http, {
-        urls: Object.keys(c.pages),
-        urlRewrites: collectUrlRewrites(c),
-    })
-}
-
-function collectUrlRewrites(c: DankConfig): Array<UrlRewrite> {
-    return Object.keys(c.pages)
+    const frontend = createBuiltDistFilesFetcher(c.dirs, manifest)
+    const devServices = startDevServices(c.services, signal)
+    const urlRewrites: Array<UrlRewrite> = Object.keys(c.pages)
         .sort()
         .map(url => {
             const mapping = c.pages[url as `/${string}`]
@@ -62,6 +44,14 @@ function collectUrlRewrites(c: DankConfig): Array<UrlRewrite> {
                 : { url, pattern: mapping.pattern }
         })
         .filter(mapping => mapping !== null)
+    startWebServer(
+        c.dankPort,
+        c.flags,
+        c.dirs,
+        { urlRewrites },
+        frontend,
+        devServices.http,
+    )
 }
 
 type BuildContextState =
@@ -71,92 +61,22 @@ type BuildContextState =
     | 'disposing'
     | null
 
-type EntrypointsState = {
-    entrypoints: Array<EntryPoint>
-    pathsIn: Set<string>
-}
-
-// todo changing partials triggers update on html pages
-async function startDevMode(
-    c: DankConfig,
-    serve: DankServe,
-    signal: AbortSignal,
-) {
-    await mkdir(serve.dirs.buildWatch, { recursive: true })
-    const registry = new WebsiteRegistry(serve)
-    const clientJS = await loadClientJS(serve.esbuildPort)
-    const pagesByUrlPath: Record<string, HtmlEntrypoint> = {}
-    const partialsByUrlPath: Record<string, Array<string>> = {}
-    const entryPointsByUrlPath: Record<string, EntrypointsState> = {}
+async function startDevMode(signal: AbortSignal) {
+    const registry = new WebsiteRegistry(c)
+    await mkdir(c.dirs.buildWatch, { recursive: true })
     let buildContext: BuildContextState = null
 
-    registry.on('workers', () => {
-        LOG({
-            realm: 'serve',
-            message: 'registry updated worker entrypoints',
-            data: {
-                workers: registry.workerEntryPoints()?.map(ep => ep.in) || null,
-            },
-        })
-        resetBuildContext()
-    })
-
     watch('dank.config.ts', signal, async () => {
-        let updated: DankConfig
         try {
-            updated = await loadConfig('serve')
+            await c.reload()
         } catch (ignore) {
             return
         }
-        const prevPages = new Set(Object.keys(pagesByUrlPath))
-        await Promise.all(
-            Object.entries(updated.pages).map(async ([urlPath, mapping]) => {
-                c.pages[urlPath as `/${string}`] = mapping
-                const srcPath =
-                    typeof mapping === 'string' ? mapping : mapping.webpage
-                if (!pagesByUrlPath[urlPath]) {
-                    LOG({
-                        realm: 'config',
-                        message: 'added page',
-                        data: {
-                            urlPath,
-                            srcPath,
-                        },
-                    })
-                    await addPage(urlPath, srcPath)
-                } else {
-                    prevPages.delete(urlPath)
-                    if (pagesByUrlPath[urlPath].fsPath !== srcPath) {
-                        LOG({
-                            realm: 'config',
-                            message: 'updated page src',
-                            data: {
-                                urlPath,
-                                newSrcPath: srcPath,
-                                oldSrcPath: pagesByUrlPath[urlPath].fsPath,
-                            },
-                        })
-                        await updatePage(urlPath)
-                    }
-                }
-            }),
-        )
-        for (const prevPage of Array.from(prevPages)) {
-            LOG({
-                realm: 'config',
-                message: 'removed page',
-                data: {
-                    urlPath: prevPage,
-                    srcPath: c.pages[prevPage as `/${string}`] as string,
-                },
-            })
-            delete c.pages[prevPage as `/${string}`]
-            deletePage(prevPage)
-        }
-        updateDevServices(updated)
+        registry.configSync()
+        updateDevServices(c.services)
     })
 
-    watch(serve.dirs.pages, signal, filename => {
+    watch(c.dirs.pages, signal, filename => {
         LOG({
             realm: 'serve',
             message: 'pages dir watch event',
@@ -165,132 +85,15 @@ async function startDevMode(
             },
         })
         if (extname(filename) === '.html') {
-            for (const [urlPath, srcPath] of Object.entries(c.pages)) {
-                if (srcPath === filename) {
-                    updatePage(urlPath)
+            registry.htmlEntrypoints.forEach(html => {
+                if (html.fsPath === filename) {
+                    html.emit('change')
+                } else if (html.usesPartial(filename)) {
+                    html.emit('change', filename)
                 }
-            }
-            for (const [urlPath, partials] of Object.entries(
-                partialsByUrlPath,
-            )) {
-                if (partials.includes(filename)) {
-                    updatePage(urlPath, filename)
-                }
-            }
+            })
         }
     })
-
-    await Promise.all(
-        Object.entries(c.pages).map(async ([urlPath, mapping]) => {
-            const srcPath =
-                typeof mapping === 'string' ? mapping : mapping.webpage
-            await addPage(urlPath, srcPath)
-            return new Promise(res =>
-                pagesByUrlPath[urlPath].once('entrypoints', res),
-            )
-        }),
-    )
-
-    async function addPage(urlPath: string, srcPath: string) {
-        await mkdir(join(serve.dirs.buildWatch, urlPath), { recursive: true })
-        const htmlEntrypoint = (pagesByUrlPath[urlPath] = new HtmlEntrypoint(
-            serve,
-            registry.resolver,
-            urlPath,
-            srcPath,
-            [{ type: 'script', js: clientJS }],
-        ))
-        htmlEntrypoint.on('entrypoints', entrypoints => {
-            const pathsIn = new Set(entrypoints.map(e => e.in))
-            if (
-                !entryPointsByUrlPath[urlPath] ||
-                !matchingEntrypoints(
-                    entryPointsByUrlPath[urlPath].pathsIn,
-                    pathsIn,
-                )
-            ) {
-                LOG({
-                    realm: 'serve',
-                    message: 'html entrypoints event',
-                    data: {
-                        previous:
-                            entryPointsByUrlPath[urlPath]?.pathsIn || null,
-                        new: pathsIn,
-                    },
-                })
-                entryPointsByUrlPath[urlPath] = { entrypoints, pathsIn }
-                resetBuildContext()
-            }
-        })
-        htmlEntrypoint.on('partial', partial => {
-            LOG({
-                realm: 'serve',
-                message: 'html partial event',
-                data: {
-                    webpage: htmlEntrypoint.fsPath,
-                    partial,
-                },
-            })
-            if (!partialsByUrlPath[urlPath]) {
-                partialsByUrlPath[urlPath] = []
-            }
-            partialsByUrlPath[urlPath].push(partial)
-        })
-        htmlEntrypoint.on('partials', partials => {
-            LOG({
-                realm: 'serve',
-                message: 'html partials event',
-                data: {
-                    allPartials: partials.length === 0,
-                    partials,
-                },
-            })
-            partialsByUrlPath[urlPath] = partials
-        })
-        htmlEntrypoint.on('output', html => {
-            const path = join(serve.dirs.buildWatch, urlPath, 'index.html')
-            LOG({
-                realm: 'serve',
-                message: 'html output event',
-                data: {
-                    webpage: htmlEntrypoint.fsPath,
-                    path,
-                },
-            })
-            writeFile(path, html)
-        })
-    }
-
-    function deletePage(urlPath: string) {
-        pagesByUrlPath[urlPath].removeAllListeners()
-        delete pagesByUrlPath[urlPath]
-        delete entryPointsByUrlPath[urlPath]
-        resetBuildContext()
-    }
-
-    async function updatePage(urlPath: string, partial?: string) {
-        pagesByUrlPath[urlPath].emit('change', partial)
-    }
-
-    function collectEntrypoints(): Array<EntryPoint> {
-        const unique: Set<string> = new Set()
-        const pageBundles = Object.values(entryPointsByUrlPath)
-            .flatMap(entrypointState => entrypointState.entrypoints)
-            .filter(entryPoint => {
-                if (unique.has(entryPoint.in)) {
-                    return false
-                } else {
-                    unique.add(entryPoint.in)
-                    return true
-                }
-            })
-        const workerBundles = registry.workerEntryPoints()
-        if (workerBundles) {
-            return [...pageBundles, ...workerBundles]
-        } else {
-            return pageBundles
-        }
-    }
 
     function resetBuildContext() {
         switch (buildContext) {
@@ -311,68 +114,61 @@ async function startDevMode(
             })
         } else {
             buildContext = 'starting'
-            startEsbuildWatch(c, registry, serve, collectEntrypoints()).then(
-                ctx => {
-                    if (buildContext === 'dirty') {
-                        buildContext = 'disposing'
-                        ctx.dispose().then(() => {
-                            buildContext = null
-                            resetBuildContext()
-                        })
-                    } else {
-                        buildContext = ctx
-                    }
-                },
-            )
+            startEsbuildWatch(registry).then(ctx => {
+                if (buildContext === 'dirty') {
+                    buildContext = 'disposing'
+                    ctx.dispose().then(() => {
+                        buildContext = null
+                        resetBuildContext()
+                    })
+                } else {
+                    buildContext = ctx
+                }
+            })
         }
     }
 
-    // function removePartialFromPage(partial: string, urlPath: string) {
-    //     const deleteIndex = urlPathsByPartials[partial].indexOf(urlPath)
-    //     if (deleteIndex !== -1) {
-    //         if (urlPathsByPartials[partial].length === 1) {
-    //             delete urlPathsByPartials[partial]
-    //         } else {
-    //             urlPathsByPartials[partial].splice(deleteIndex, 1)
-    //         }
-    //     }
-    // }
+    registry.on('entrypoints', resetBuildContext)
+
+    registry.on('webpage', html =>
+        html.on('output', output => writeHtml(html, output)),
+    )
+
+    registry.on('workers', () => {
+        LOG({
+            realm: 'serve',
+            message: 'registry updated worker entrypoints',
+            data: {
+                workers: registry.workerEntryPoints?.map(ep => ep.in) || null,
+            },
+        })
+        resetBuildContext()
+    })
+
+    await registry.htmlProcessed
+    await Promise.all(
+        registry.htmlEntrypoints.map(html => writeHtml(html, html.output())),
+    )
 
     // inital start of esbuild ctx
     resetBuildContext()
 
-    // todo this page route state could be built on change and reused
-    const pageRoutes: PageRouteState = {
-        get urls(): Array<string> {
-            return Object.keys(c.pages)
-        },
-        get urlRewrites(): Array<UrlRewrite> {
-            return collectUrlRewrites(c)
-        },
-    }
-    const frontend = createDevServeFilesFetcher(pageRoutes, serve)
-    const devServices = startDevServices(c, signal)
-    startWebServer(serve, frontend, devServices.http, pageRoutes)
-}
-
-function matchingEntrypoints(a: Set<string>, b: Set<string>): boolean {
-    if (a.size !== b.size) {
-        return false
-    }
-    for (const v in a) {
-        if (!b.has(v)) {
-            return false
-        }
-    }
-    return true
+    const frontend = createDevServeFilesFetcher(c.esbuildPort, c.dirs, registry)
+    const devServices = startDevServices(c.services, signal)
+    startWebServer(
+        c.dankPort,
+        c.flags,
+        c.dirs,
+        registry,
+        frontend,
+        devServices.http,
+    )
 }
 
 async function startEsbuildWatch(
-    c: DankConfig,
     registry: WebsiteRegistry,
-    serve: DankServe,
-    entryPoints: Array<EntryPoint>,
 ): Promise<BuildContext> {
+    const entryPoints = registry.webpageAndWorkerEntryPoints
     LOG({
         realm: 'serve',
         message: 'starting esbuild watch',
@@ -381,21 +177,19 @@ async function startEsbuildWatch(
         },
     })
     const ctx = await esbuildDevContext(
-        serve,
         registry,
-        createGlobalDefinitions(serve),
+        createGlobalDefinitions(c),
         entryPoints,
-        c.esbuild,
     )
 
     await ctx.watch()
 
     await ctx.serve({
         host: '127.0.0.1',
-        port: serve.esbuildPort,
+        port: c.esbuildPort,
         cors: {
             origin: ['127.0.0.1', 'localhost'].map(
-                hostname => `http://${hostname}:${serve.dankPort}`,
+                hostname => `http://${hostname}:${c.dankPort}`,
             ),
         },
     })
@@ -403,48 +197,17 @@ async function startEsbuildWatch(
     return ctx
 }
 
-async function loadClientJS(esbuildPort: number) {
-    const clientJS = await readFile(
-        resolve(import.meta.dirname, join('..', 'client', 'esbuild.js')),
-        'utf-8',
-    )
-    return clientJS.replace('3995', `${esbuildPort}`)
-}
-
-async function watch(
-    p: string,
-    signal: AbortSignal,
-    fire: (filename: string) => void,
-) {
-    const delayFire = 90
-    const timeout = 100
-    let changes: Record<string, number> = {}
-    try {
-        for await (const { filename } of _watch(p, {
-            recursive: true,
-            signal,
-        })) {
-            if (filename) {
-                if (!changes[filename]) {
-                    const now = Date.now()
-                    changes[filename] = now + delayFire
-                    setTimeout(() => {
-                        const now = Date.now()
-                        for (const [filename, then] of Object.entries(
-                            changes,
-                        )) {
-                            if (then <= now) {
-                                fire(filename)
-                                delete changes[filename]
-                            }
-                        }
-                    }, timeout)
-                }
-            }
-        }
-    } catch (e: any) {
-        if (e.name !== 'AbortError') {
-            throw e
-        }
-    }
+async function writeHtml(html: HtmlEntrypoint, output: string) {
+    const dir = join(c.dirs.buildWatch, html.url)
+    await mkdir(dir, { recursive: true })
+    const path = join(dir, 'index.html')
+    LOG({
+        realm: 'serve',
+        message: 'html output event',
+        data: {
+            webpage: html.fsPath,
+            path,
+        },
+    })
+    await writeFile(path, output)
 }

@@ -28,13 +28,15 @@
         }
     },
     "scripts": {
-        "build": "tsc && tsc -p tsconfig.client.json && tsc -p tsconfig.exports.json",
+        "build": "pnpm build:client && pnpm build:lib",
+        "build:client": "node scripts/build_client.ts",
+        "build:lib": "tsc && tsc -p tsconfig.exports.json",
         "build:release": "pnpm build && ./scripts/prepare_release.ts",
         "fmt": "prettier --write .",
         "fmtcheck": "prettier --check .",
         "test": "node --test \"test/**/*.test.ts\"",
         "test:rebuild": "pnpm build && pnpm test",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit && tsc -p tsconfig.client.json --noEmit"
     },
     "dependencies": {
         "esbuild": "^0.25.10",
@@ -47,7 +49,7 @@
         "typescript": "^5.9.2"
     },
     "files": [
-        "client/esbuild.js",
+        "client/client.js",
         "lib/*.ts",
         "lib_js/*.js",
         "lib_types/*.d.ts"

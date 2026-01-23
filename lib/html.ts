@@ -1,6 +1,6 @@
 import EventEmitter from 'node:events'
 import { readFile } from 'node:fs/promises'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { extname } from 'node:path/posix'
 import {
     defaultTreeAdapter,
@@ -9,9 +9,9 @@ import {
     parseFragment,
     serialize,
 } from 'parse5'
+import type { ResolvedDankConfig } from './config.ts'
+import type { Resolver } from './dirs.ts'
 import type { EntryPoint } from './esbuild.ts'
-import type { DankBuild } from './flags.ts'
-import type { Resolver } from './metadata.ts'
 
 type CommentNode = DefaultTreeAdapterTypes.CommentNode
 type Document = DefaultTreeAdapterTypes.Document
@@ -44,7 +44,7 @@ type ImportedScript = {
     entrypoint: EntryPoint
 }
 
-export type HtmlDecoration = {
+type HtmlDecoration = {
     type: 'script'
     js: string
 }
@@ -64,40 +64,31 @@ export type HtmlEntrypointEvents = {
     // Dispatched from HtmlEntrypoint to notify when new HtmlEntrypoint.#document output is ready for write
     // Parameter `html` is the updated html content of the page ready to be output to the build dir
     output: [html: string]
-    // Dispatched from HtmlEntrypoint to notify `dank serve` of a partial dependency for an HtmlEntrypoint
-    // Seemingly a duplicate of event `partials` but it keeps relevant state in sync during async io
-    // Parameter `partial` is the fs path to the partial
-    partial: [partial: string]
-    // Dispatched from HtmlEntrypoint to notify `dank serve` of completely resolved imported partials
-    // Parameter `partials` are the fs paths to the partials
-    partials: [partials: Array<string>]
 }
 
 export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
-    #build: DankBuild
-    #decorations?: Array<HtmlDecoration>
+    #c: ResolvedDankConfig
+    #clientJS: ClientJS | null
     #document: Document = defaultTreeAdapter.createDocument()
-    // todo cache entrypoints set for quicker diffing
-    // #entrypoints: Set<string> = new Set()
+    #entrypoints: Set<string> = new Set()
     // path within pages dir omitting pages/ segment
     #fsPath: string
     #partials: Array<PartialContent> = []
     #resolver: Resolver
     #scripts: Array<ImportedScript> = []
     #update: Object = Object()
-    #url: string
+    #url: `/${string}`
 
     constructor(
-        build: DankBuild,
+        c: ResolvedDankConfig,
         resolver: Resolver,
-        url: string,
+        url: `/${string}`,
         fsPath: string,
-        decorations?: Array<HtmlDecoration>,
     ) {
         super({ captureRejections: true })
-        this.#build = build
+        this.#c = c
+        this.#clientJS = ClientJS.initialize(c)
         this.#resolver = resolver
-        this.#decorations = decorations
         this.#url = url
         this.#fsPath = fsPath
         this.on('change', this.#onChange)
@@ -108,23 +99,33 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         return this.#fsPath
     }
 
-    get url(): string {
+    get url(): `/${string}` {
         return this.#url
+    }
+
+    output(hrefs?: HtmlHrefs): string {
+        this.#injectPartials()
+        this.#rewriteHrefs(hrefs)
+        return serialize(this.#document)
+    }
+
+    usesPartial(fsPath: string): boolean {
+        return this.#partials.some(partial => partial.fsPath === fsPath)
     }
 
     async #html(): Promise<string> {
         try {
             return await readFile(
-                join(this.#build.dirs.pages, this.#fsPath),
+                this.#resolver.absPagesPath(this.#fsPath),
                 'utf8',
             )
         } catch (e) {
+            console.log(JSON.stringify(this.#c.dirs, null, 4))
             // todo error handling
             errorExit(this.#fsPath + ' does not exist')
         }
     }
 
-    // todo if partial changes, hot swap content in page
     #onChange = async (_partial?: string) => {
         const update = (this.#update = Object())
         const html = await this.#html()
@@ -135,12 +136,17 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         }
         this.#collectImports(document, imports)
         const partials = await this.#resolvePartialContent(imports.partials)
+        if (this.#clientJS !== null) {
+            const decoration = await this.#clientJS.retrieve(
+                this.#c.esbuildPort,
+            )
+            this.#addScriptDecoration(document, decoration.js)
+        }
         if (update !== this.#update) {
             // another update has started so aborting this one
+            // only do synchronous work after this check
             return
         }
-        this.#addDecorations(document)
-        this.#update = update
         this.#document = document
         this.#partials = partials
         this.#scripts = imports.scripts
@@ -148,28 +154,30 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
             imports,
             ...partials.map(p => p.imports),
         )
-        // this.#entrypoints = new Set(entrypoints.map(entrypoint => entrypoint.in))
-        this.emit('entrypoints', entrypoints)
-        this.emit(
-            'partials',
-            this.#partials.map(p => p.fsPath),
-        )
+        if (this.#haveEntrypointsChanged(entrypoints)) {
+            this.emit('entrypoints', entrypoints)
+        }
         if (this.listenerCount('output')) {
             this.emit('output', this.output())
         }
     }
 
+    #haveEntrypointsChanged(entrypoints: Array<EntryPoint>) {
+        const set = new Set(entrypoints.map(entrypoint => entrypoint.in))
+        const changed = set.symmetricDifference(this.#entrypoints).size > 0
+        this.#entrypoints = set
+        return changed
+    }
+
     // Emits `partial` on detecting a partial reference for `dank serve` file watches
     // to respond to dependent changes
-    // todo safeguard recursive partials that cause circular imports
     async #resolvePartialContent(
         partials: Array<PartialReference>,
     ): Promise<Array<PartialContent>> {
         return await Promise.all(
             partials.map(async p => {
-                this.emit('partial', p.fsPath)
                 const html = await readFile(
-                    join(this.#build.dirs.pages, p.fsPath),
+                    this.#resolver.absPagesPath(p.fsPath),
                     'utf8',
                 )
                 const fragment = parseFragment(html)
@@ -219,35 +227,16 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         }
     }
 
-    #addDecorations(document: Document) {
-        if (!this.#decorations?.length) {
-            return
-        }
-        for (const decoration of this.#decorations) {
-            switch (decoration.type) {
-                case 'script':
-                    const scriptNode = parseFragment(
-                        `<script type="module">${decoration.js}</script>`,
-                    ).childNodes[0]
-                    const htmlNode = document.childNodes.find(
-                        node => node.nodeName === 'html',
-                    ) as ParentNode
-                    const headNode = htmlNode.childNodes.find(
-                        node => node.nodeName === 'head',
-                    ) as ParentNode | undefined
-                    defaultTreeAdapter.appendChild(
-                        headNode || htmlNode,
-                        scriptNode,
-                    )
-                    break
-            }
-        }
-    }
-
-    output(hrefs?: HtmlHrefs): string {
-        this.#injectPartials()
-        this.#rewriteHrefs(hrefs)
-        return serialize(this.#document)
+    #addScriptDecoration(document: Document, js: string) {
+        const scriptNode = parseFragment(`<script type="module">${js}</script>`)
+            .childNodes[0]
+        const htmlNode = document.childNodes.find(
+            node => node.nodeName === 'html',
+        ) as ParentNode
+        const headNode = htmlNode.childNodes.find(
+            node => node.nodeName === 'head',
+        ) as ParentNode | undefined
+        defaultTreeAdapter.appendChild(headNode || htmlNode, scriptNode)
     }
 
     // rewrites hrefs to content hashed urls
@@ -261,7 +250,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
 
     async #injectPartials() {
         for (const { commentNode, fragment } of this.#partials) {
-            if (!this.#build.production) {
+            if (!this.#c.flags.production) {
                 defaultTreeAdapter.insertBefore(
                     commentNode.parentNode!,
                     defaultTreeAdapter.createCommentNode(commentNode.data),
@@ -275,7 +264,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
                     commentNode,
                 )
             }
-            if (this.#build.production) {
+            if (this.#c.flags.production) {
                 defaultTreeAdapter.detachNode(commentNode)
             }
         }
@@ -343,7 +332,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         href: string,
         elem: Element,
     ): ImportedScript {
-        const inPath = join(this.#build.dirs.pages, dirname(this.#fsPath), href)
+        const inPath = join(this.#c.dirs.pages, dirname(this.#fsPath), href)
         if (!this.#resolver.isProjectSubpathInPagesDir(inPath)) {
             errorExit(
                 `href ${href} in webpage ${this.#fsPath} cannot reference sources outside of the pages directory`,
@@ -410,4 +399,44 @@ function rewriteHrefs(scripts: Array<ImportedScript>, hrefs?: HtmlHrefs) {
 function errorExit(msg: string): never {
     console.log(`\u001b[31merror:\u001b[0m`, msg)
     process.exit(1)
+}
+
+class ClientJS {
+    static #instance: ClientJS | null = null
+
+    static initialize(c: ResolvedDankConfig): ClientJS | null {
+        if (c.mode === 'build' || c.flags.preview) {
+            return null
+        } else if (!ClientJS.#instance) {
+            ClientJS.#instance = new ClientJS(c.esbuildPort)
+        }
+        return ClientJS.#instance
+    }
+
+    #esbuildPort: number
+    #read: Promise<string>
+    #result: Promise<HtmlDecoration>
+
+    private constructor(esbuildPort: number) {
+        this.#esbuildPort = esbuildPort
+        this.#read = readFile(
+            resolve(import.meta.dirname, join('..', 'client', 'client.js')),
+            'utf-8',
+        )
+        this.#result = this.#read.then(this.#transform)
+    }
+
+    async retrieve(esbuildPort: number): Promise<HtmlDecoration> {
+        if (esbuildPort !== this.#esbuildPort) {
+            this.#result = this.#read.then(this.#transform)
+        }
+        return await this.#result
+    }
+
+    #transform = (js: string): HtmlDecoration => {
+        return {
+            type: 'script',
+            js: js.replace('3995', '' + this.#esbuildPort),
+        }
+    }
 }

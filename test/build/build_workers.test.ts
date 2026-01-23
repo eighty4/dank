@@ -1,29 +1,38 @@
 import assert from 'node:assert/strict'
-import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
-import { test } from 'node:test'
-import { createDank, dankBuild } from '../dank_project_testing.ts'
+import { suite, test } from 'node:test'
+import { createDank } from '../dank_project_testing.ts'
 
-test('html entrypoint rewrites worker url', async () => {
-    const testDir = await createDank()
-    await writeFile(
-        join(testDir, 'pages', 'dank.ts'),
-        `\
-        const w = new Worker('./computational-wizardry.ts')
-        w.onerror = console.error
-        `,
-    )
-    await writeFile(join(testDir, 'pages', 'computational-wizardry.ts'), ``)
-    await dankBuild(testDir)
-
-    const output = await readBundleOutput(testDir, 'dank.ts')
-    assert.ok(
-        /new Worker\('\/computational-wizardry-[A-Z\d]{8}\.js/.test(output),
-    )
-    assert.equal(
-        await readBundleOutput(testDir, 'computational-wizardry.ts'),
-        '',
-    )
+suite('building web workers', () => {
+    suite('succeeds', () => {
+        test('rewriting worker url with build hash', async () => {
+            for (const ctor of ['Worker', 'SharedWorker']) {
+                const project = await createDank({
+                    files: {
+                        'pages/dank.ts': `\
+                            const w = new ${ctor}('./computational-wizardry.ts')
+                            w.onerror = console.error`,
+                        'pages/computational-wizardry.ts': '',
+                    },
+                })
+                await project.build()
+                const output = await readBundleOutput(project.dir, 'dank.ts')
+                const pattern = new RegExp(
+                    `new ${ctor}\\('\\/computational-wizardry-[A-Z\\d]{8}\\.js'\\)`,
+                    'g',
+                )
+                assert.ok(pattern.test(output))
+                assert.equal(
+                    await readBundleOutput(
+                        project.dir,
+                        'computational-wizardry.ts',
+                    ),
+                    '',
+                )
+            }
+        })
+    })
 })
 
 async function readBundleOutput(projectDir: string, entrypoint: string) {

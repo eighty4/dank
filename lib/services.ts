@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { basename, isAbsolute, resolve } from 'node:path'
-import type { DankConfig, DevService } from './dank.ts'
+import type { DevService, ResolvedDankConfig } from './config.ts'
 
 export type DevServices = {
     http: HttpServices
@@ -24,26 +24,26 @@ let updating: null | {
 } = null
 
 export function startDevServices(
-    c: DankConfig,
+    services: ResolvedDankConfig['services'],
     _signal: AbortSignal,
 ): DevServices {
     signal = _signal
-    if (c.services?.length) {
-        for (const s of c.services) {
+    if (services?.length) {
+        for (const s of services) {
             running.push({ s, process: startService(s) })
         }
     }
     return {
         http: {
-            get running(): Array<NonNullable<DevService['http']>> {
+            get running(): Array<HttpService> {
                 return running.map(({ s }) => s.http).filter(http => !!http)
             },
         },
     }
 }
 
-export function updateDevServices(c: DankConfig) {
-    if (!c.services?.length) {
+export function updateDevServices(services: ResolvedDankConfig['services']) {
+    if (!services?.length) {
         if (running.length) {
             if (updating === null) {
                 updating = { stopping: [], starting: [] }
@@ -63,7 +63,7 @@ export function updateDevServices(c: DankConfig) {
         }
         const keep = []
         const next: Array<DevService> = []
-        for (const s of c.services) {
+        for (const s of services) {
             let found = false
             for (let i = 0; i < running.length; i++) {
                 const p = running[i].s

@@ -10,8 +10,14 @@ import {
 import { extname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import mime from 'mime'
-import type { DankServe } from './flags.ts'
-import type { WebsiteManifest } from './metadata.ts'
+import type { DankDirectories } from './dirs.ts'
+import type { DankFlags } from './flags.ts'
+import type {
+    UrlRewrite,
+    UrlRewriteProvider,
+    WebsiteManifest,
+    WebsiteRegistry,
+} from './registry.ts'
 import type { HttpServices } from './services.ts'
 
 export type FrontendFetcher = (
@@ -21,25 +27,15 @@ export type FrontendFetcher = (
     notFound: () => void,
 ) => void
 
-// state needed to eval url rewriting after FrontendFetcher and before HttpServices
-export type PageRouteState = {
-    // urls of html entrypoints
-    urls: Array<string>
-    urlRewrites: Array<UrlRewrite>
-}
-
-export type UrlRewrite = {
-    pattern: RegExp
-    url: string
-}
-
 export function startWebServer(
-    serve: DankServe,
+    port: number,
+    flags: DankFlags,
+    dirs: DankDirectories,
+    urlRewriteProvider: UrlRewriteProvider,
     frontendFetcher: FrontendFetcher,
     httpServices: HttpServices,
-    pageRoutes: PageRouteState,
 ) {
-    const serverAddress = 'http://localhost:' + serve.dankPort
+    const serverAddress = 'http://localhost:' + port
     const handler = (req: IncomingMessage, res: ServerResponse) => {
         if (!req.url || !req.method) {
             res.end()
@@ -52,19 +48,20 @@ export function startWebServer(
                     url,
                     headers,
                     httpServices,
-                    pageRoutes,
-                    serve,
+                    flags,
+                    dirs,
+                    urlRewriteProvider,
                     res,
                 ),
             )
         }
     }
-    createServer(serve.logHttp ? createLogWrapper(handler) : handler).listen(
-        serve.dankPort,
+    createServer(flags.logHttp ? createLogWrapper(handler) : handler).listen(
+        port,
     )
     console.log(
-        serve.preview ? 'preview' : 'dev',
-        `server is live at http://127.0.0.1:${serve.dankPort}`,
+        flags.preview ? 'preview' : 'dev',
+        `server is live at http://127.0.0.1:${port}`,
     )
 }
 
@@ -73,12 +70,18 @@ async function onNotFound(
     url: URL,
     headers: Headers,
     httpServices: HttpServices,
-    pageRoutes: PageRouteState,
-    serve: DankServe,
+    flags: DankFlags,
+    dirs: DankDirectories,
+    urlRewriteProvider: UrlRewriteProvider,
     res: ServerResponse,
 ) {
     if (req.method === 'GET' && extname(url.pathname) === '') {
-        const urlRewrite = tryUrlRewrites(url, pageRoutes, serve)
+        const urlRewrite = tryUrlRewrites(
+            flags,
+            dirs,
+            urlRewriteProvider.urlRewrites,
+            url,
+        )
         if (urlRewrite) {
             streamFile(urlRewrite, res)
             return
@@ -107,16 +110,17 @@ async function sendFetchResponse(res: ServerResponse, fetchResponse: Response) {
 }
 
 function tryUrlRewrites(
+    flags: DankFlags,
+    dirs: DankDirectories,
+    urlRewrites: Array<UrlRewrite>,
     url: URL,
-    pageRoutes: PageRouteState,
-    serve: DankServe,
 ): string | null {
-    const urlRewrite = pageRoutes.urlRewrites.find(urlRewrite =>
+    const urlRewrite = urlRewrites.find(urlRewrite =>
         urlRewrite.pattern.test(url.pathname),
     )
     return urlRewrite
         ? join(
-              serve.preview ? serve.dirs.buildDist : serve.dirs.buildWatch,
+              flags.preview ? dirs.buildDist : dirs.buildWatch,
               urlRewrite.url,
               'index.html',
           )
@@ -182,7 +186,7 @@ function createLogWrapper(handler: RequestListener): RequestListener {
 }
 
 export function createBuiltDistFilesFetcher(
-    dir: string,
+    dirs: DankDirectories,
     manifest: WebsiteManifest,
 ): FrontendFetcher {
     return (
@@ -192,34 +196,42 @@ export function createBuiltDistFilesFetcher(
         notFound: () => void,
     ) => {
         if (manifest.pageUrls.has(url.pathname)) {
-            streamFile(join(dir, url.pathname, 'index.html'), res)
+            streamFile(
+                join(
+                    dirs.projectResolved,
+                    dirs.buildDist,
+                    url.pathname,
+                    'index.html',
+                ),
+                res,
+            )
         } else if (manifest.files.has(url.pathname)) {
-            streamFile(join(dir, url.pathname), res)
+            streamFile(
+                join(dirs.projectResolved, dirs.buildDist, url.pathname),
+                res,
+            )
         } else {
             notFound()
         }
     }
 }
 
-// todo replace PageRouteState with WebsiteRegistry
 export function createDevServeFilesFetcher(
-    pageRoutes: PageRouteState,
-    serve: DankServe,
+    esbuildPort: number,
+    dirs: DankDirectories,
+    registry: WebsiteRegistry,
 ): FrontendFetcher {
-    const proxyAddress = 'http://127.0.0.1:' + serve.esbuildPort
+    const proxyAddress = 'http://127.0.0.1:' + esbuildPort
     return (
         url: URL,
         _headers: Headers,
         res: ServerResponse,
         notFound: () => void,
     ) => {
-        if (pageRoutes.urls.includes(url.pathname)) {
-            streamFile(
-                join(serve.dirs.buildWatch, url.pathname, 'index.html'),
-                res,
-            )
+        if (registry.pageUrls.includes(url.pathname)) {
+            streamFile(join(dirs.buildWatch, url.pathname, 'index.html'), res)
         } else {
-            const maybePublicPath = join(serve.dirs.public, url.pathname)
+            const maybePublicPath = join(dirs.public, url.pathname)
             exists(maybePublicPath).then(fromPublic => {
                 if (fromPublic) {
                     streamFile(maybePublicPath, res)

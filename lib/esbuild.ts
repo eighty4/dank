@@ -9,45 +9,39 @@ import esbuild, {
     type Plugin,
     type PluginBuild,
 } from 'esbuild'
-import type { EsbuildConfig } from './dank.ts'
 import type { DefineDankGlobal } from './define.ts'
-import type { DankBuild } from './flags.ts'
-import type { BuildRegistry, WebsiteRegistry } from './metadata.ts'
+import type { BuildRegistry, WebsiteRegistry } from './registry.ts'
 
 export type EntryPoint = { in: string; out: string }
 
 export async function esbuildDevContext(
-    b: DankBuild,
     r: WebsiteRegistry,
     define: DefineDankGlobal,
     entryPoints: Array<EntryPoint>,
-    c?: EsbuildConfig,
 ): Promise<BuildContext> {
     return await esbuild.context({
         define,
         entryNames: '[dir]/[name]',
         entryPoints: mapEntryPointPaths(entryPoints),
-        outdir: b.dirs.buildWatch,
-        ...commonBuildOptions(b, r, c),
+        outdir: r.config.dirs.buildWatch,
+        ...commonBuildOptions(r),
         splitting: false,
         write: false,
     })
 }
 
 export async function esbuildWebpages(
-    b: DankBuild,
     r: WebsiteRegistry,
     define: DefineDankGlobal,
     entryPoints: Array<EntryPoint>,
-    c?: EsbuildConfig,
 ): Promise<void> {
     try {
         await esbuild.build({
             define,
             entryNames: '[dir]/[name]-[hash]',
             entryPoints: mapEntryPointPaths(entryPoints),
-            outdir: b.dirs.buildDist,
-            ...commonBuildOptions(b, r, c),
+            outdir: r.config.dirs.buildDist,
+            ...commonBuildOptions(r),
         })
     } catch (ignore) {
         process.exit(1)
@@ -55,19 +49,17 @@ export async function esbuildWebpages(
 }
 
 export async function esbuildWorkers(
-    b: DankBuild,
     r: WebsiteRegistry,
     define: DefineDankGlobal,
     entryPoints: Array<EntryPoint>,
-    c?: EsbuildConfig,
 ): Promise<void> {
     try {
         await esbuild.build({
             define,
             entryNames: '[dir]/[name]-[hash]',
             entryPoints: mapEntryPointPaths(entryPoints),
-            outdir: b.dirs.buildDist,
-            ...commonBuildOptions(b, r, c),
+            outdir: r.config.dirs.buildDist,
+            ...commonBuildOptions(r),
             splitting: false,
             metafile: true,
             write: true,
@@ -78,22 +70,19 @@ export async function esbuildWorkers(
     }
 }
 
-function commonBuildOptions(
-    b: DankBuild,
-    r: WebsiteRegistry,
-    c?: EsbuildConfig,
-): BuildOptions {
+function commonBuildOptions(r: WebsiteRegistry): BuildOptions {
     const p = workersPlugin(r.buildRegistry())
     return {
-        absWorkingDir: b.dirs.projectRootAbs,
         assetNames: 'assets/[name]-[hash]',
         bundle: true,
         format: 'esm',
-        loader: c?.loaders || defaultLoaders(),
+        loader: r.config.esbuild?.loaders || defaultLoaders(),
         metafile: true,
-        minify: b.minify,
+        minify: r.config.flags.minify,
         platform: 'browser',
-        plugins: c?.plugins?.length ? [p, ...c.plugins] : [p],
+        plugins: r.config.esbuild?.plugins?.length
+            ? [p, ...r.config.esbuild?.plugins]
+            : [p],
         splitting: true,
         treeShaking: true,
         write: true,
@@ -127,11 +116,8 @@ export function workersPlugin(r: BuildRegistry): Plugin {
     return {
         name: '@eighty4/dank/esbuild/workers',
         setup(build: PluginBuild) {
-            if (!build.initialOptions.absWorkingDir)
-                throw TypeError('plugin requires absWorkingDir')
             if (!build.initialOptions.metafile)
                 throw TypeError('plugin requires metafile')
-            const { absWorkingDir } = build.initialOptions
 
             build.onLoad({ filter: /\.(t|m?j)s$/ }, async args => {
                 let contents = await readFile(args.path, 'utf8')
@@ -158,7 +144,7 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                         continue
                     }
                     const clientScript = args.path
-                        .replace(absWorkingDir, '')
+                        .replace(r.dirs.projectResolved, '')
                         .substring(1)
                     const workerUrl = workerCtorMatch.groups!.url.substring(
                         1,
@@ -182,10 +168,13 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                         )
                         continue
                     }
+                    const workerCtor = workerCtorMatch.groups!.ctor as
+                        | 'Worker'
+                        | 'SharedWorker'
                     const workerUrlPlaceholder = workerEntryPoint
                         .replace(/^pages/, '')
                         .replace(/\.(t|m?j)s$/, '.js')
-                    const workerCtorReplacement = `new ${workerCtorMatch.groups!.ctor}('${workerUrlPlaceholder}'${workerCtorMatch.groups!.end}`
+                    const workerCtorReplacement = `new ${workerCtor}('${workerUrlPlaceholder}'${workerCtorMatch.groups!.end}`
                     contents =
                         contents.substring(0, workerCtorMatch.index + offset) +
                         workerCtorReplacement +
@@ -199,6 +188,7 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                     r.addWorker({
                         clientScript,
                         workerEntryPoint,
+                        workerCtor,
                         workerUrl,
                         workerUrlPlaceholder,
                     })

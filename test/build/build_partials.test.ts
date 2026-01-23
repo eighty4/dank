@@ -1,115 +1,119 @@
 import assert from 'node:assert/strict'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { test } from 'node:test'
-import {
-    createDank,
-    dankBuild,
-    readReplaceWrite,
-    readTest,
-} from '../dank_project_testing.ts'
+import { suite, test } from 'node:test'
+import { createDank, DankCreated, readTest } from '../dank_project_testing.ts'
 
-test('partial with html content', async () => {
-    const testDir = await createDank()
-    await readReplaceWrite(
-        join(testDir, 'pages', 'dank.html'),
-        /<\/head>/,
-        `<!-- {{ ./open_graph.html }} -->\n</head>`,
-    )
-    await writeFile(
-        join(testDir, 'pages', 'open_graph.html'),
-        '<meta property="og:title" content="Sweet blog post, bro">',
-    )
-    await dankBuild(testDir)
-    assert.ok(
-        await readTest(
-            join(testDir, 'build', 'dist', 'index.html'),
-            /<meta property="og:title"/,
-        ),
-    )
-})
+suite('building pages with partials', () => {
+    suite('succeeds', () => {
+        test('injects html content', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.html': DankCreated.html.replace(
+                        /<\/head>/,
+                        `<!-- {{ ./open_graph.html }} -->\n</head>`,
+                    ),
+                    'pages/open_graph.html':
+                        '<meta property="og:title" content="Sweet blog post, bro">',
+                },
+            })
+            await project.build()
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', 'index.html'),
+                    /<meta property="og:title"/,
+                ),
+            )
+        })
 
-test('partial with js and css entrypoints', async () => {
-    const testDir = await createDank()
-    await readReplaceWrite(
-        join(testDir, 'pages', 'dank.html'),
-        /<\/head>/,
-        `<!-- {{ ./notification_ui.html }} -->\n</head>`,
-    )
-    await writeFile(
-        join(testDir, 'pages', 'notification_ui.html'),
-        '<link rel="stylesheet" href="./Notifications.css"/>\n<script type="module" src="./Notifications.ts"></script>',
-    )
-    await writeFile(
-        join(testDir, 'pages', 'Notifications.ts'),
-        `alert('notification')`,
-    )
-    await writeFile(
-        join(testDir, 'pages', 'Notifications.css'),
-        `dialog[open] { display: none; }`,
-    )
-    await dankBuild(testDir)
-    assert.ok(
-        await readTest(
-            join(testDir, 'build', 'dist', 'index.html'),
-            /<script type="module" src="\/Notifications-[A-Z\d]{8}\.js"><\/script>/,
-        ),
-        `js script not found in ${join(testDir, 'build', 'dist', 'index.html')}`,
-    )
-    assert.ok(
-        await readTest(
-            join(testDir, 'build', 'dist', 'index.html'),
-            /<link rel="stylesheet" href="\/Notifications-[A-Z\d]{8}\.css">/,
-        ),
-        `css link not found in ${join(testDir, 'build', 'dist', 'index.html')}`,
-    )
-})
+        test('adds js and css entrypoints to webpage bundles', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.html': DankCreated.html.replace(
+                        /<\/head>/,
+                        `<!-- {{ ./notification_ui.html }} -->\n</head>`,
+                    ),
+                    'pages/notification_ui.html':
+                        '<link rel="stylesheet" href="./Notifications.css"/>\n<script type="module" src="./Notifications.ts"></script>',
+                    'pages/Notifications.ts': `alert('notification')`,
+                    'pages/Notifications.css': `dialog[open] { display: none; }`,
+                },
+            })
+            await project.build()
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', 'index.html'),
+                    /<script type="module" src="\/Notifications-[A-Z\d]{8}\.js"><\/script>/,
+                ),
+                `js script not found in ${project.path('build', 'dist', 'index.html')}`,
+            )
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', 'index.html'),
+                    /<link rel="stylesheet" href="\/Notifications-[A-Z\d]{8}\.css">/,
+                ),
+                `css link not found in ${project.path('build', 'dist', 'index.html')}`,
+            )
+        })
 
-test('partial errors when importing from parent dir of pages dir', async () => {
-    const testDir = await createDank()
-    await readReplaceWrite(
-        join(testDir, 'pages', 'dank.html'),
-        /<\/head>/,
-        `<!-- {{ ../bad_path.html }} -->\n</head>`,
-    )
-    try {
-        await dankBuild(testDir)
-        assert.fail('build should have failed')
-    } catch (e) {}
-})
+        test('resolves partial in child dir', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.html': DankCreated.html.replace(
+                        /<\/head>/,
+                        `<!-- {{ ./notifications/ui.html }} -->\n</head>`,
+                    ),
+                    'pages/notifications/ui.html':
+                        '<link rel="stylesheet" href="./Notifications.css"/>\n<script type="module" src="./Notifications.ts"></script>',
+                    'pages/notifications/Notifications.ts': `alert('notification')`,
+                    'pages/notifications/Notifications.css': `dialog[open] { display: none; }`,
+                },
+            })
+            await project.build()
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', 'index.html'),
+                    /<script type="module" src="\/notifications\/Notifications-[A-Z\d]{8}\.js"><\/script>/,
+                ),
+                `js script not found in ${project.path('build', 'dist', 'index.html')}`,
+            )
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', 'index.html'),
+                    /<link rel="stylesheet" href="\/notifications\/Notifications-[A-Z\d]{8}\.css">/,
+                ),
+                `css link not found in ${project.path('build', 'dist', 'index.html')}`,
+            )
+        })
+    })
 
-test('partial errors when importing with absolute path', async () => {
-    const testDir = await createDank()
-    await readReplaceWrite(
-        join(testDir, 'pages', 'dank.html'),
-        /<\/head>/,
-        `<!-- {{ /codes/bad_path.html }} -->\n</head>`,
-    )
-    try {
-        await dankBuild(testDir)
-        assert.fail('build should have failed')
-    } catch (e) {}
-})
+    suite('errors', () => {
+        test('importing from parent dir of pages dir', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.html': DankCreated.html.replace(
+                        /<\/head>/,
+                        `<!-- {{ ../bad_path.html }} -->\n</head>`,
+                    ),
+                },
+            })
+            try {
+                await project.build()
+                assert.fail('build should have failed')
+            } catch (e) {}
+        })
 
-test('partial in diff dir', async () => {
-    const testDir = await createDank()
-    await readReplaceWrite(
-        join(testDir, 'pages', 'dank.html'),
-        /<\/head>/,
-        `<!-- {{ ./notifications/ui.html }} -->\n</head>`,
-    )
-    await mkdir(join(testDir, 'pages', 'notifications'))
-    await writeFile(
-        join(testDir, 'pages', 'notifications', 'ui.html'),
-        '<link rel="stylesheet" href="./Notifications.css"/>\n<script type="module" src="./Notifications.ts"></script>',
-    )
-    await writeFile(
-        join(testDir, 'pages', 'notifications', 'Notifications.ts'),
-        `alert('notification')`,
-    )
-    await writeFile(
-        join(testDir, 'pages', 'notifications', 'Notifications.css'),
-        `dialog[open] { display: none; }`,
-    )
-    await dankBuild(testDir)
+        test('importing with absolute path', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.html': DankCreated.html.replace(
+                        /<\/head>/,
+                        `<!-- {{ /codes/bad_path.html }} -->\n</head>`,
+                    ),
+                },
+            })
+            try {
+                await project.build()
+                assert.fail('build should have failed')
+            } catch (e) {}
+        })
+    })
 })
