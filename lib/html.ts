@@ -1,6 +1,6 @@
 import EventEmitter from 'node:events'
 import { readFile } from 'node:fs/promises'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { extname } from 'node:path/posix'
 import {
     defaultTreeAdapter,
@@ -10,7 +10,9 @@ import {
     serialize,
 } from 'parse5'
 import type { ResolvedDankConfig } from './config.ts'
+import { LOG } from './developer.ts'
 import type { Resolver } from './dirs.ts'
+import { DankError } from './errors.ts'
 import type { EntryPoint } from './esbuild.ts'
 
 type CommentNode = DefaultTreeAdapterTypes.CommentNode
@@ -28,6 +30,8 @@ type PartialReference = {
     commentNode: CommentNode
     // path within pages dir omitting pages/ segment
     fsPath: string
+    // unresolved partial path read from commentNode text
+    specifier: string
 }
 
 type PartialContent = PartialReference & {
@@ -61,6 +65,8 @@ export type HtmlEntrypointEvents = {
     // Dispatched from HtmlEntrypoint to notify `dank serve` of changes to esbuild entrypoints
     // Parameter `entrypoints` is the esbuild mappings of the input and output paths
     entrypoints: [entrypoints: Array<EntryPoint>]
+    // Dispatched from HtmlEntrypoint when processing HTML is aborted on error
+    error: [e: Error]
     // Dispatched from HtmlEntrypoint to notify when new HtmlEntrypoint.#document output is ready for write
     // Parameter `html` is the updated html content of the page ready to be output to the build dir
     output: [html: string]
@@ -92,7 +98,6 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         this.#url = url
         this.#fsPath = fsPath
         this.on('change', this.#onChange)
-        this.emit('change')
     }
 
     get fsPath(): string {
@@ -101,6 +106,10 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
 
     get url(): `/${string}` {
         return this.#url
+    }
+
+    async process() {
+        await this.#onChange()
     }
 
     output(hrefs?: HtmlHrefs): string {
@@ -113,29 +122,35 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         return this.#partials.some(partial => partial.fsPath === fsPath)
     }
 
-    async #html(): Promise<string> {
-        try {
-            return await readFile(
-                this.#resolver.absPagesPath(this.#fsPath),
-                'utf8',
-            )
-        } catch (e) {
-            console.log(JSON.stringify(this.#c.dirs, null, 4))
-            // todo error handling
-            errorExit(this.#fsPath + ' does not exist')
-        }
-    }
-
-    #onChange = async (_partial?: string) => {
+    #onChange = async () => {
         const update = (this.#update = Object())
-        const html = await this.#html()
+        let html: string
+        try {
+            html = await this.#readFromPages(this.#fsPath)
+        } catch (e) {
+            this.#error(
+                `url \`${this.#url}\` html file \`${join(this.#c.dirs.pages, this.#fsPath)}\` does not exist`,
+            )
+            return
+        }
         const document = parse(html)
         const imports: CollectedImports = {
             partials: [],
             scripts: [],
         }
+        let partials: Array<PartialContent>
         this.#collectImports(document, imports)
-        const partials = await this.#resolvePartialContent(imports.partials)
+        const partialResults = await this.#resolvePartialContent(
+            imports.partials,
+        )
+        partials = partialResults.filter(p => p !== false)
+        // `dank serve` will not throw an error during a partial error, so this emits error and breaks out of `change` event handler
+        if (partials.length !== partialResults.length) {
+            this.#error(
+                `update to \`${join(this.#c.dirs.pages, this.#fsPath)}\` did not update to \`${this.#url}\` because of unresolved partials`,
+            )
+            return
+        }
         if (this.#clientJS !== null) {
             const decoration = await this.#clientJS.retrieve(
                 this.#c.esbuildPort,
@@ -154,11 +169,47 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
             imports,
             ...partials.map(p => p.imports),
         )
+        LOG({
+            realm: 'html',
+            message: 'processed html entrypoint',
+            data: {
+                url: this.#url,
+                html: this.#fsPath,
+                entrypoints: entrypoints.map(ep => ep.in),
+                partials: partials.map(p => p.fsPath),
+            },
+        })
         if (this.#haveEntrypointsChanged(entrypoints)) {
             this.emit('entrypoints', entrypoints)
         }
         if (this.listenerCount('output')) {
             this.emit('output', this.output())
+        }
+    }
+
+    #error(e: DankError | Error | string) {
+        let message: string
+        let error: Error
+        if (typeof e === 'string') {
+            message = e
+            error = new DankError(e)
+        } else {
+            message = e.message
+            error = e
+        }
+        LOG({
+            realm: 'html',
+            message: 'error processing html',
+            data: {
+                url: this.#url,
+                html: this.#fsPath,
+                error: message,
+            },
+        })
+        if (this.listenerCount('error')) {
+            this.emit('error', error)
+        } else {
+            throw error
         }
     }
 
@@ -169,17 +220,42 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         return changed
     }
 
-    // Emits `partial` on detecting a partial reference for `dank serve` file watches
-    // to respond to dependent changes
+    async #readFromPages(p: string): Promise<string> {
+        return await readFile(this.#resolver.absPagesPath(p), 'utf8')
+    }
+
     async #resolvePartialContent(
         partials: Array<PartialReference>,
-    ): Promise<Array<PartialContent>> {
+    ): Promise<Array<PartialContent | false>> {
         return await Promise.all(
             partials.map(async p => {
-                const html = await readFile(
-                    this.#resolver.absPagesPath(p.fsPath),
-                    'utf8',
-                )
+                let html: string
+                if (isAbsolute(p.specifier)) {
+                    this.#error(
+                        `partials cannot be referenced with an absolute path like \`${p.specifier}\` in webpage \`${join(this.#c.dirs.pages, this.#fsPath)}\``,
+                    )
+                    return false
+                }
+                if (!this.#resolver.isPagesSubpathInPagesDir(p.fsPath)) {
+                    this.#error(
+                        `partials cannot be referenced from outside the pages dir like \`${p.specifier}\` in webpage \`${join(this.#c.dirs.pages, this.#fsPath)}\``,
+                    )
+                    return false
+                }
+                if (extname(p.fsPath) !== '.html') {
+                    this.#error(
+                        `partial path \`${p.fsPath}\` referenced by \`${this.#fsPath}\` is not a valid partial path`,
+                    )
+                    return false
+                }
+                try {
+                    html = await this.#readFromPages(p.fsPath)
+                } catch (e) {
+                    this.#error(
+                        `partial \`${join('pages', p.fsPath)}\` imported by \`${join('pages', this.#fsPath)}\` does not exist`,
+                    )
+                    return false
+                }
                 const fragment = parseFragment(html)
                 const imports: CollectedImports = {
                     partials: [],
@@ -189,10 +265,8 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
                     this.#rewritePartialRelativePaths(node, p.fsPath)
                 })
                 if (imports.partials.length) {
-                    // todo recursive partials?
-                    // await this.#resolvePartialContent(imports.partials)
-                    errorExit(
-                        `partial ${p.fsPath} cannot recursively import partials`,
+                    this.#error(
+                        `partials cannot import another partial like \`${join(this.#c.dirs.pages, p.fsPath)}\``,
                     )
                 }
                 const content: PartialContent = {
@@ -282,24 +356,11 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
             if (childNode.nodeName === '#comment' && 'data' in childNode) {
                 const partialMatch = childNode.data.match(/\{\{(?<pp>.+)\}\}/)
                 if (partialMatch) {
-                    const partialSpecifier = partialMatch.groups!.pp.trim()
-                    if (partialSpecifier.startsWith('/')) {
-                        errorExit(
-                            `partial ${partialSpecifier} in webpage ${this.#fsPath} cannot be an absolute path`,
-                        )
-                    }
-                    const partialPath = join(
-                        dirname(this.#fsPath),
-                        partialSpecifier,
-                    )
-                    if (!this.#resolver.isPagesSubpathInPagesDir(partialPath)) {
-                        errorExit(
-                            `partial ${partialSpecifier} in webpage ${this.#fsPath} cannot be outside of the pages directory`,
-                        )
-                    }
+                    const specifier = partialMatch.groups!.pp.trim()
                     collection.partials.push({
-                        fsPath: partialPath,
                         commentNode: childNode,
+                        fsPath: join(dirname(this.#fsPath), specifier),
+                        specifier: specifier,
                     })
                 }
             } else if (childNode.nodeName === 'script') {
@@ -334,8 +395,8 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
     ): ImportedScript {
         const inPath = join(this.#c.dirs.pages, dirname(this.#fsPath), href)
         if (!this.#resolver.isProjectSubpathInPagesDir(inPath)) {
-            errorExit(
-                `href ${href} in webpage ${this.#fsPath} cannot reference sources outside of the pages directory`,
+            throw new DankError(
+                `href \`${href}\` in webpage \`${join(this.#c.dirs.pages, this.#fsPath)}\` cannot reference sources outside of the pages directory`,
             )
         }
         let outPath = join(dirname(this.#fsPath), href)
@@ -393,12 +454,6 @@ function rewriteHrefs(scripts: Array<ImportedScript>, hrefs?: HtmlHrefs) {
                 rewriteTo || `/${entrypoint.out}`
         }
     }
-}
-
-// todo evented error handling so HtmlEntrypoint can be unit tested
-function errorExit(msg: string): never {
-    console.log(`\u001b[31merror:\u001b[0m`, msg)
-    process.exit(1)
 }
 
 class ClientJS {

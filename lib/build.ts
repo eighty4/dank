@@ -42,8 +42,9 @@ async function buildWebpages(
     define: DefineDankGlobal,
 ): Promise<WebsiteRegistry> {
     const registry = new WebsiteRegistry(c)
+    registry.configSync()
     registry.copiedAssets = await copyAssets(c.dirs)
-    await registry.htmlProcessed
+    await Promise.all(registry.htmlEntrypoints.map(html => html.process()))
     await esbuildWebpages(registry, define, registry.webpageEntryPoints)
 
     // todo recursively build workers on building workers that create workers

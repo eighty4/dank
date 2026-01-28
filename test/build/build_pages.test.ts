@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { rm } from 'node:fs/promises'
 import { suite, test } from 'node:test'
 import {
     createDank,
@@ -100,6 +101,15 @@ suite('building pages', () => {
                 /\.\/dank\.ts/,
                 '../dank.ts',
             )
+            try {
+                await project.build()
+                assert.fail('build should have failed')
+            } catch (e) {}
+        })
+
+        test('page does not exist', async () => {
+            const project = await createDank()
+            await rm(project.path('pages/dank.html'))
             try {
                 await project.build()
                 assert.fail('build should have failed')

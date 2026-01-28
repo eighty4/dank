@@ -128,11 +128,12 @@ async function startDevMode(signal: AbortSignal) {
         }
     }
 
-    registry.on('entrypoints', resetBuildContext)
-
-    registry.on('webpage', html =>
-        html.on('output', output => writeHtml(html, output)),
-    )
+    registry.on('webpage', html => {
+        html.on('error', e =>
+            console.log(`\u001b[31merror:\u001b[0m`, e.message),
+        )
+        html.on('output', output => writeHtml(html, output))
+    })
 
     registry.on('workers', () => {
         LOG({
@@ -145,10 +146,11 @@ async function startDevMode(signal: AbortSignal) {
         resetBuildContext()
     })
 
-    await registry.htmlProcessed
-    await Promise.all(
-        registry.htmlEntrypoints.map(html => writeHtml(html, html.output())),
-    )
+    registry.configSync()
+    await Promise.all(registry.htmlEntrypoints.map(html => html.process()))
+
+    // listen for entrypoint diffs after processing webpages
+    registry.on('entrypoints', () => resetBuildContext())
 
     // inital start of esbuild ctx
     resetBuildContext()
@@ -203,7 +205,7 @@ async function writeHtml(html: HtmlEntrypoint, output: string) {
     const path = join(dir, 'index.html')
     LOG({
         realm: 'serve',
-        message: 'html output event',
+        message: 'writing html output',
         data: {
             webpage: html.fsPath,
             path,
