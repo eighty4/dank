@@ -73,7 +73,6 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
     #copiedAssets: Set<string> | null = null
     // map of entrypoints to their output path
     #entrypointHrefs: Record<string, string | null> = {}
-    #initialEntryPoints: Promise<any> | null = null
     #pages: Record<`/${string}`, WebpageRegistration> = {}
     readonly #resolver: Resolver
     #workers: Array<WorkerManifest> | null = null
@@ -95,19 +94,6 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
 
     get htmlEntrypoints(): Array<HtmlEntrypoint> {
         return Object.values(this.#pages).map(p => p.html)
-    }
-
-    // a one-time promise resolving when all webpages have emitted the `entrypoints` event
-    get htmlProcessed(): Promise<void> {
-        if (!this.#initialEntryPoints) {
-            this.#configDiff()
-            this.#initialEntryPoints = Promise.all(
-                this.htmlEntrypoints.map(
-                    html => new Promise(res => html.once('entrypoints', res)),
-                ),
-            )
-        }
-        return this.#initialEntryPoints
     }
 
     get pageUrls(): Array<string> {

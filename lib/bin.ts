@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { buildWebsite } from './build.ts'
+import { DankError } from './errors.ts'
 import { serveWebsite } from './serve.ts'
 
 function printHelp(task?: 'build' | 'serve'): never {
@@ -85,13 +86,12 @@ try {
 
 function printError(e: unknown) {
     if (e !== null) {
-        if (typeof e === 'string') {
-            console.error(red('error:'), e)
-        } else if (e instanceof Error) {
+        if (e instanceof DankError) {
             console.error(red('error:'), e.message)
-            if (e.stack) {
-                console.error(e.stack)
-            }
+        } else if (e instanceof Error) {
+            console.error(red('error:'), e.stack ?? e.message)
+        } else {
+            console.error(red('error:'), e)
         }
     }
 }

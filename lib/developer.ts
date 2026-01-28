@@ -36,7 +36,7 @@ type LogEventData =
     | Set<LogEventDatum>
     | Record<string, LogEventDatum>
 
-type LogEventDatum = boolean | number | string | null
+type LogEventDatum = boolean | number | string | null | undefined
 
 function toStringLogEvent(logEvent: LogEvent): string {
     const when = new Date().toISOString()
@@ -73,17 +73,17 @@ function toStringData(datum: LogEventData): string {
     }
 }
 
-function logToConsoleAndFile(logEvent: LogEvent) {
-    logToConsole(logEvent)
-    logToFile(logEvent)
+function logToConsoleAndFile(out: string) {
+    logToConsole(out)
+    logToFile(out)
 }
 
-function logToConsole(logEvent: LogEvent) {
-    console.log(toStringLogEvent(logEvent))
+function logToConsole(out: string) {
+    console.log('\n' + out)
 }
 
-function logToFile(logEvent: LogEvent) {
-    logs.push(toStringLogEvent(logEvent))
+function logToFile(out: string) {
+    logs.push(out)
     if (!initialized) {
         initialized = true
         preparing = prepareLogFile().catch(onPrepareLogFileError)
@@ -126,15 +126,21 @@ function onPrepareLogFileError(e: any) {
     process.exit(1)
 }
 
+function makeLogger(
+    logDelegate: (out: string) => void,
+): (logEvent: LogEvent) => void {
+    return logEvent => logDelegate(toStringLogEvent(logEvent))
+}
+
 export const LOG = (function resolveLogFn() {
     if (CONSOLE && FILE?.length) {
-        return logToConsoleAndFile
+        return makeLogger(logToConsoleAndFile)
     }
     if (CONSOLE) {
-        return logToConsole
+        return makeLogger(logToConsole)
     }
     if (FILE?.length) {
-        return logToFile
+        return makeLogger(logToFile)
     }
     return () => {}
 })()

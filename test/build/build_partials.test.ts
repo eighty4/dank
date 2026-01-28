@@ -115,5 +115,36 @@ suite('building pages with partials', () => {
                 assert.fail('build should have failed')
             } catch (e) {}
         })
+
+        test('importing bad path', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.html': DankCreated.html.replace(
+                        /<\/head>/,
+                        `<!-- {{ bad_ext.jif }} -->\n</head>`,
+                    ),
+                },
+            })
+            try {
+                await project.build()
+                assert.fail('build should have failed')
+            } catch (e) {}
+        })
+
+        test('recursive partial', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.html': DankCreated.html.replace(
+                        /<\/head>/,
+                        `<!-- {{ partial.html }} -->\n</head>`,
+                    ),
+                    'pages/partial.html': `<p>Partial</p>\n<!-- {{ another_partial.html }} -->`,
+                },
+            })
+            try {
+                await project.build()
+                assert.fail('build should have failed')
+            } catch (e) {}
+        })
     })
 })
