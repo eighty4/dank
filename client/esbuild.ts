@@ -59,7 +59,7 @@ new EventSource('http://127.0.0.1:3995/esbuild').addEventListener(
 )
 
 export function addCssUpdateIndicator() {
-    const indicator = createUpdateIndicator('green', '9999')
+    const indicator = createUpdateIndicator('green', '23995')
     indicator.style.opacity = '0'
     indicator.animate(
         [
@@ -85,21 +85,26 @@ export function addCssUpdateIndicator() {
     )
 }
 
+let jsIndicator: HTMLElement | null = null
+
 function addJsReloadIndicator() {
-    const indicator = createUpdateIndicator('orange', '9000')
-    indicator.style.opacity = '0'
-    indicator.animate([{ opacity: 0 }, { opacity: 1 }], {
+    if (jsIndicator) return
+    jsIndicator = createUpdateIndicator('orange', '33995')
+    jsIndicator.style.opacity = '0'
+    jsIndicator.style.pointerEvents = 'none'
+    jsIndicator.animate([{ opacity: 0 }, { opacity: 1 }], {
         duration: 400,
         iterations: 1,
         direction: 'normal',
         easing: 'ease-in',
+        fill: 'forwards',
     })
-    document.body.appendChild(indicator)
+    document.body.appendChild(jsIndicator)
 }
 
 function createUpdateIndicator(
     color: 'green' | 'orange',
-    zIndex: '9000' | '9999',
+    zIndex: '23995' | '33995',
 ): HTMLDivElement {
     const indicator = document.createElement('div')
     indicator.style.border = '6px dashed ' + color
