@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- ???
+
+## [v0.0.4] - 2026-02-04
+
 ### Added
 
 - Scripts can import Workers with relative paths like `new Worker('./worker.ts')`
@@ -43,7 +47,8 @@
 - `dank.config.ts` configures api/web service commands that are started with `dank serve`
   using the `DankConfig['services']` field of `defineConfig`
 
-[Unreleased]: https://github.com/eighty4/dank/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/eighty4/dank/compare/v0.0.4...HEAD
+[v0.0.4]: https://github.com/eighty4/dank/compare/v0.0.3...v0.0.4
 [v0.0.3]: https://github.com/eighty4/dank/compare/v0.0.2...v0.0.3
 [v0.0.2]: https://github.com/eighty4/dank/compare/v0.0.1...v0.0.2
 [v0.0.1]: https://github.com/eighty4/dank/releases/tag/v0.0.1
