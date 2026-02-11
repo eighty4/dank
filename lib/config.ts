@@ -149,7 +149,7 @@ async function resolveConfig(
     modulePath: string,
     details: DankDetails,
 ): Promise<DankConfig> {
-    const module = await import(`${modulePath}?${Date.now()}`)
+    const module = await import(`file:${modulePath}?${Date.now()}`)
     const c: Partial<DankConfig> =
         typeof module.default === 'function'
             ? await module.default(details)
