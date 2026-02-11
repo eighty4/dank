@@ -230,10 +230,11 @@ async function npmCreateDank(dir: string) {
 }
 
 async function npmInstall(dir: string) {
+    const absPathToDank = dirname(import.meta.dirname)
     await readReplaceWrite(
         join(dir, 'package.json'),
         /"@eighty4\/dank": ".*"/,
-        `"@eighty4/dank": "file:${dirname(import.meta.dirname)}"`,
+        `"@eighty4/dank": "file:${absPathToDank.replaceAll('\\', '\\\\')}"`,
     )
     await new Promise<void>((res, rej) => {
         let timeout: ReturnType<typeof setTimeout> | null = null
