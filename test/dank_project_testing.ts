@@ -252,7 +252,7 @@ async function npmInstall(dir: string) {
                 res()
             }
         })
-        const TIMEOUT = 10000
+        const TIMEOUT = 20000
         timeout = setTimeout(() => {
             npmInstall.kill()
             rej(Error(`failed \`npm i\`: timed out after ${TIMEOUT / 1000}s`))
