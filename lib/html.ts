@@ -1,6 +1,7 @@
 import EventEmitter from 'node:events'
 import { readFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { join } from 'node:path/posix'
 import { extname } from 'node:path/posix'
 import {
     defaultTreeAdapter,

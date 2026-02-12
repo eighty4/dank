@@ -40,9 +40,17 @@ export async function defaultProjectDirs(
 export type ResolveError = 'outofbounds'
 
 export class Resolver {
+    static create(dirs: DankDirectories): Resolver {
+        if (process.platform === 'win32') {
+            return new WindowsResolver(dirs)
+        } else {
+            return new Resolver(dirs)
+        }
+    }
+
     #dirs: DankDirectories
 
-    constructor(dirs: DankDirectories) {
+    protected constructor(dirs: DankDirectories) {
         this.#dirs = dirs
     }
 
@@ -79,5 +87,15 @@ export class Resolver {
         } else {
             return 'outofbounds'
         }
+    }
+}
+
+class WindowsResolver extends Resolver {
+    constructor(dirs: DankDirectories) {
+        super(dirs)
+    }
+
+    resolveHrefInPagesDir(from: string, href: string): string | ResolveError {
+        return super.resolveHrefInPagesDir(from, href).replaceAll('\\', '/')
     }
 }

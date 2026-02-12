@@ -144,7 +144,7 @@ export async function testDir(
     await Promise.all([mkdir(join(dir, 'pages')), mkdir(join(dir, 'public'))])
     await setupScaffolding(dir, scaffolding)
     const dirs = await defaultProjectDirs(dir)
-    return { dirs, resolver: new Resolver(dirs) }
+    return { dirs, resolver: Resolver.create(dirs) }
 }
 
 class DankTestProject {
@@ -199,10 +199,14 @@ class DankTestProject {
     }
 }
 
+export async function makeTempDir(): Promise<string> {
+    return await mkdtemp(join(tmpdir(), 'dank-test-'))
+}
+
 export async function createDank(
     scaffolding?: DankProjectScaffolding,
 ): Promise<DankTestProject> {
-    const dir = join(await mkdtemp(join(tmpdir(), 'dank-test-')), 'www')
+    const dir = join(await makeTempDir(), 'www')
     await npmCreateDank(dir)
     await npmInstall(dir)
     await setupScaffolding(dir, scaffolding)

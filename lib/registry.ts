@@ -1,6 +1,6 @@
 import EventEmitter from 'node:events'
 import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join } from 'node:path/posix'
 import type { BuildResult } from 'esbuild'
 import type { ResolvedDankConfig } from './config.ts'
 import type { PageMapping } from './dank.ts'
@@ -80,7 +80,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
     constructor(config: ResolvedDankConfig) {
         super()
         this.#c = config
-        this.#resolver = new Resolver(config.dirs)
+        this.#resolver = Resolver.create(config.dirs)
     }
 
     get config(): ResolvedDankConfig {

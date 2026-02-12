@@ -1,4 +1,6 @@
 import { readFile } from 'node:fs/promises'
+// import { sep as windowsSep } from 'node:path/win32'
+// import { sep as posixSep } from 'node:path/posix'
 import esbuild, {
     type BuildContext,
     type BuildOptions,
@@ -146,6 +148,7 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                     const clientScript = args.path
                         .replace(r.dirs.projectResolved, '')
                         .substring(1)
+                        .replaceAll('\\', '/')
                     const workerUrl = workerCtorMatch.groups!.url.substring(
                         1,
                         workerCtorMatch.groups!.url.length - 1,
@@ -174,6 +177,7 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                     const workerUrlPlaceholder = workerEntryPoint
                         .replace(/^pages/, '')
                         .replace(/\.(t|m?j)s$/, '.js')
+                        .replaceAll('\\', '/')
                     const workerCtorReplacement = `new ${workerCtor}('${workerUrlPlaceholder}'${workerCtorMatch.groups!.end}`
                     contents =
                         contents.substring(0, workerCtorMatch.index + offset) +

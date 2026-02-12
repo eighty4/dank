@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { rm } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { suite, test } from 'node:test'
 import {
     createDank,
@@ -9,6 +9,22 @@ import {
 } from '../dank_project_testing.ts'
 
 suite('building pages', () => {
+    suite('build manifest', () => {
+        test('is written to build dir', async () => {
+            const project = await createDank()
+            await project.build()
+            const websiteJson = await readFile(
+                project.path('build/website.json'),
+                'utf8',
+            )
+            const website = JSON.parse(websiteJson)
+            assert.equal('buildTag' in website, true)
+            assert.equal('files' in website, true)
+            assert.equal(website.files.includes('/index.html'), true)
+            assert.equal('pageUrls' in website, true)
+            assert.equal(website.pageUrls.includes('/'), true)
+        })
+    })
     suite('succeeds', () => {
         test('rewriting hrefs', async () => {
             const project = await createDank()
