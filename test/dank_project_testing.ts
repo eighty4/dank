@@ -344,11 +344,13 @@ export class DankServing extends EventEmitter<DankServingEvents> {
             DANK_PORT: `${this.dankPort}`,
             ESBUILD_PORT: `${this.esbuildPort}`,
         }
-        const args = ['run', 'dev']
+        const args = [join(import.meta.dirname, '../lib/bin.ts'), 'serve']
         if (this.#preview) {
             args.push('--', '--preview')
         }
-        this.#process = spawn('npm', args, { cwd: this.#cwd, env })
+        // do not spawn `npm run dev` bc on windows process.kill an npm
+        // process will not delegate shutdown to `dank serve` process
+        this.#process = spawn('node', args, { cwd: this.#cwd, env })
         this.#process.stdout.on('data', chunk =>
             this.#appendOutput(chunk.toString()),
         )
