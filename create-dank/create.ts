@@ -9,7 +9,7 @@ import {
     writeFile,
 } from 'node:fs/promises'
 import { Socket } from 'node:net'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 let isNetworkAvailable: Promise<boolean> = checkNetwork()
 
@@ -208,10 +208,7 @@ console.log(
     bold(/^(\.|\/)/.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`),
 )
 console.log()
-console.log(
-    '        cd',
-    /^\.?\//.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`,
-)
+console.log('        cd', changeDirPath())
 if (opts.corepack && !isCorepackEnabled()) {
     if (!isCorepackBundled()) {
         console.log(`        ${packageManager} i -g corepack`)
@@ -225,6 +222,14 @@ console.log(
 console.log()
 console.log('    Enjoy!')
 console.log()
+
+function changeDirPath(): string {
+    if (isAbsolute(opts.outDir)) {
+        return opts.outDir
+    } else {
+        return /^\.?\//.test(opts.outDir) ? opts.outDir : `./${opts.outDir}`
+    }
+}
 
 function isCorepackEnabled(): boolean {
     return !!process.env['COREPACK_ROOT']?.length
