@@ -66,7 +66,14 @@ async function startDevMode(signal: AbortSignal) {
     await mkdir(c.dirs.buildWatch, { recursive: true })
     let buildContext: BuildContextState = null
 
-    watch('dank.config.ts', signal, async () => {
+    watch('dank.config.ts', signal, async filename => {
+        LOG({
+            realm: 'serve',
+            message: 'config watch event',
+            data: {
+                file: filename,
+            },
+        })
         try {
             await c.reload()
         } catch (ignore) {

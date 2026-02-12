@@ -3,11 +3,11 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { BuildResult } from 'esbuild'
 import type { ResolvedDankConfig } from './config.ts'
+import type { PageMapping } from './dank.ts'
 import { LOG } from './developer.ts'
 import { Resolver, type DankDirectories } from './dirs.ts'
 import type { EntryPoint } from './esbuild.ts'
 import { HtmlEntrypoint } from './html.ts'
-import type { PageMapping } from './dank.ts'
 
 // summary of a website build
 export type WebsiteManifest = {
@@ -257,6 +257,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
             this.#setWebpageBundles(html.url, entrypoints),
         )
         this.emit('webpage', html)
+        html.emit('change')
     }
 
     #configPageUpdate(urlPath: `/${string}`, mapping: PageMapping) {
@@ -399,9 +400,7 @@ export class BuildRegistry {
         return this.#resolver
     }
 
-    // resolve web worker imported by a webpage module
     addWorker(worker: Omit<WorkerManifest, 'dependentEntryPoint'>) {
-        // todo normalize path
         if (!this.#workers) {
             this.#workers = [worker]
         } else {
@@ -433,7 +432,6 @@ export class BuildRegistry {
                 }
             }
         }
-
         this.#onComplete({
             bundles,
             workers,
