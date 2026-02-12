@@ -2,7 +2,13 @@
 
 ## [Unreleased]
 
-- ???
+### Added
+
+- Builds and CICD verify Linux, MacOS and Windows compat
+
+### Fixed
+
+- Windows paths support
 
 ## [v0.0.4] - 2026-02-04
 
