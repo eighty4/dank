@@ -9,8 +9,8 @@ export async function getAvailablePort(doNotUse?: number) {
 }
 
 function getRandomPort() {
-    const min = Math.ceil(49152)
-    const max = Math.floor(65535)
+    const min = Math.ceil(7000)
+    const max = Math.floor(8000)
     return Math.floor(Math.random() * (max - min + 1)) + min
 }
 

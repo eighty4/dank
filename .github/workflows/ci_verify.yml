@@ -9,14 +9,20 @@ on:
 
 jobs:
   verify:
-    needs: [test-dank, verify-dank, verify-create-dank]
+    needs:
+      - test-dank
+      - verify-dank
+      - verify-create-dank
     runs-on: ubuntu-latest
     steps:
       - run: echo 'Do you like green eggs and ham?'
 
-  # test/serve/* tests hang on ubuntu runners
   test-dank:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        os: [ubuntu, windows]
+    name: 'test-dank-${{ matrix.os }}'
+    runs-on: '${{ matrix.os }}-latest'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

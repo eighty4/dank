@@ -19,6 +19,8 @@ import { loadConfig, type ResolvedDankConfig } from '../lib/config.ts'
 
 const DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true'
 
+const DANK_BIN_PATH = join(import.meta.dirname, '../lib/bin.ts')
+
 export type DankProjectScaffolding = {
     // files to write to project dir from project root
     files?: Record<string, DankCreated | string>
@@ -260,10 +262,10 @@ async function npmInstall(dir: string) {
 
 async function dankBuild(cwd: string): Promise<void> {
     await new Promise<void>((res, rej) => {
-        exec('npm run build 2>&1', { cwd }, (err, stdout) => {
+        exec(`node ${DANK_BIN_PATH} build 2>&1`, { cwd }, (err, stdout) => {
             if (err) {
                 if (DEBUG && stdout) console.log(stdout)
-                rej(Error('`npm run build` error', { cause: err }))
+                rej(Error('`node lib/build.ts` error', { cause: err }))
             } else {
                 if (DEBUG) console.log(stdout)
                 res()
@@ -348,7 +350,7 @@ export class DankServing extends EventEmitter<DankServingEvents> {
             DANK_PORT: `${this.dankPort}`,
             ESBUILD_PORT: `${this.esbuildPort}`,
         }
-        const args = [join(import.meta.dirname, '../lib/bin.ts'), 'serve']
+        const args = [DANK_BIN_PATH, 'serve']
         if (this.#preview) {
             args.push('--', '--preview')
         }
