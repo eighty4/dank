@@ -125,6 +125,7 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                 let contents = await readFile(args.path, 'utf8')
                 let offset = 0
                 let errors: Array<PartialMessage> | undefined = undefined
+                let clientScript: string | undefined = undefined
                 for (const workerCtorMatch of contents.matchAll(
                     WORKER_CTOR_REGEX,
                 )) {
@@ -145,10 +146,11 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                     if (isIndexCommented(contents, workerCtorMatch.index)) {
                         continue
                     }
-                    const clientScript = args.path
-                        .replace(r.dirs.projectResolved, '')
-                        .substring(1)
-                        .replaceAll('\\', '/')
+                    if (!clientScript) {
+                        clientScript = r.resolver.projectPathFromAbsolute(
+                            args.path,
+                        )
+                    }
                     const workerUrl = workerCtorMatch.groups!.url.substring(
                         1,
                         workerCtorMatch.groups!.url.length - 1,

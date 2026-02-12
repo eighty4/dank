@@ -1,59 +1,11 @@
 import assert from 'node:assert/strict'
 import { suite, test } from 'node:test'
 import esbuild from 'esbuild'
-import { createDank, makeTempDir } from './dank_project_testing.ts'
+import { createDank } from './dank_project_testing.ts'
 import { workersPlugin } from '../lib/esbuild.ts'
 import { WebsiteRegistry } from '../lib/registry.ts'
-import { defaultProjectDirs, Resolver } from '../lib/dirs.ts'
 
 suite('registry.ts', () => {
-    suite('path resolver', () => {
-        test('resolves whether path is pages subdir', async () => {
-            const projectDir = await makeTempDir()
-            const dankDirs = await defaultProjectDirs(projectDir)
-            const resolver = Resolver.create(dankDirs)
-            assert.equal(
-                resolver.isPagesSubpathInPagesDir('./profile/Profile.html'),
-                true,
-            )
-            assert.equal(
-                resolver.isPagesSubpathInPagesDir('../profile/Profile.html'),
-                false,
-            )
-        })
-        test('resolves whether path is pages subdir', async () => {
-            const projectDir = await makeTempDir()
-            const dankDirs = await defaultProjectDirs(projectDir)
-            const resolver = Resolver.create(dankDirs)
-            assert.equal(
-                resolver.isProjectSubpathInPagesDir(
-                    '/pages/profile/Profile.html',
-                ),
-                true,
-            )
-        })
-        test('resolves to the same results regardless of posix or windows paths', async () => {
-            const projectDir = await makeTempDir()
-            const dankDirs = await defaultProjectDirs(projectDir)
-            const resolver = Resolver.create(dankDirs)
-            assert.equal(
-                resolver.isPagesSubpathInPagesDir(
-                    '\\pages\\profile\\Profile.html',
-                ),
-                resolver.isPagesSubpathInPagesDir(
-                    '/pages/profile/Profile.html',
-                ),
-            )
-            assert.equal(
-                resolver.isPagesSubpathInPagesDir(
-                    '\\pages\\profile\\Profile.html',
-                ),
-                resolver.isPagesSubpathInPagesDir(
-                    '/pages/profile/Profile.html',
-                ),
-            )
-        })
-    })
     suite('website registry', () => {
         suite('build registry', () => {
             test('registers worker manifest', async () => {

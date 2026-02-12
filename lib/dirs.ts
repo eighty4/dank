@@ -1,6 +1,5 @@
 import { realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { cwd } from 'node:process'
 
 export type DankDirectories = {
     buildRoot: string
@@ -17,9 +16,7 @@ export type DankDirectories = {
 export async function defaultProjectDirs(
     projectRootAbs: string,
 ): Promise<Readonly<DankDirectories>> {
-    if (!projectRootAbs) {
-        projectRootAbs = cwd()
-    } else if (!isAbsolute(projectRootAbs)) {
+    if (!isAbsolute(projectRootAbs)) {
         throw Error()
     }
     const projectResolved = await realpath(projectRootAbs)
@@ -76,6 +73,10 @@ export class Resolver {
         return this.isProjectSubpathInPagesDir(join(this.#dirs.pages, p))
     }
 
+    projectPathFromAbsolute(p: string) {
+        return p.replace(this.#dirs.projectRootAbs, '').substring(1)
+    }
+
     // resolve a pages subpath from a resource within the pages directory by a relative href
     // `from` is expected to be a pages resource fs path starting with `pages/` and ending with filename
     // the result will be a pages subpath and will not have the pages dir prefix
@@ -93,6 +94,10 @@ export class Resolver {
 class WindowsResolver extends Resolver {
     constructor(dirs: DankDirectories) {
         super(dirs)
+    }
+
+    projectPathFromAbsolute(p: string): string {
+        return super.projectPathFromAbsolute(p).replaceAll('\\', '/')
     }
 
     resolveHrefInPagesDir(from: string, href: string): string | ResolveError {

@@ -45,14 +45,15 @@ export async function loadConfig(
         throw Error()
     }
     const modulePath = resolve(projectRootAbs, DEFAULT_CONFIG_PATH)
+    const dirs = await defaultProjectDirs(projectRootAbs)
     LOG({
         realm: 'config',
         message: 'loading config module',
         data: {
+            dirs,
             modulePath,
         },
     })
-    const dirs = await defaultProjectDirs(projectRootAbs)
     const c = new DankConfigInternal(mode, modulePath, dirs)
     await c.reload()
     return c
