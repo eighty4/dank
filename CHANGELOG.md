@@ -9,6 +9,7 @@
 ### Fixed
 
 - Windows paths support
+- Dev services are launched and cleaned up correctly on Windows
 
 ## [v0.0.4] - 2026-02-04
 

@@ -1,4 +1,9 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import {
+    type ChildProcess,
+    type ChildProcessWithoutNullStreams,
+    execSync,
+    spawn,
+} from 'node:child_process'
 import { basename, isAbsolute, resolve } from 'node:path'
 import type { DevService, ResolvedDankConfig } from './config.ts'
 
@@ -14,6 +19,18 @@ export type HttpService = NonNullable<DevService['http']>
 
 // up to date representation of dank.config.ts services
 const running: Array<{ s: DevService; process: ChildProcess | null }> = []
+
+// on Windows process.kill() and AbortSignal will not kill the process spawned with cmd.exe
+if (process.platform === 'win32') {
+    process.once('SIGINT', () => process.exit())
+    process.once('exit', () => {
+        for (const { process } of running) {
+            if (process) {
+                execSync(`taskkill /pid ${process.pid} /T /F`)
+            }
+        }
+    })
+}
 
 let signal: AbortSignal
 
@@ -140,40 +157,54 @@ function matchingConfig(a: DevService, b: DevService): boolean {
 
 function startService(s: DevService): ChildProcess {
     opPrint(s, 'starting')
-    const splitCmdAndArgs = s.command.split(/\s+/)
-    const cmd = splitCmdAndArgs[0]
-    const args = splitCmdAndArgs.length === 1 ? [] : splitCmdAndArgs.slice(1)
-    const spawned = spawn(cmd, args, {
-        cwd: resolveCwd(s.cwd),
-        env: s.env,
-        signal,
-        detached: false,
-        shell: false,
-    })
+    const spawned = spawnService(s)
 
-    const stdoutLabel = logLabel(s.cwd, cmd, args, 32)
+    const stdoutLabel = logLabel(s, 32)
     spawned.stdout.on('data', chunk => printChunk(stdoutLabel, chunk))
 
-    const stderrLabel = logLabel(s.cwd, cmd, args, 31)
+    const stderrLabel = logLabel(s, 31)
     spawned.stderr.on('data', chunk => printChunk(stderrLabel, chunk))
 
     spawned.on('error', e => {
-        if (e.name !== 'AbortError') {
-            const cause =
-                'code' in e && e.code === 'ENOENT'
-                    ? 'program not found'
-                    : e.message
-            opPrint(s, 'error: ' + cause)
-        }
         removeFromRunning(s)
+        if (e.name === 'AbortError') {
+            return
+        }
+        const cause =
+            'code' in e && e.code === 'ENOENT' ? 'program not found' : e.message
+        opPrint(s, 'error: ' + cause)
     })
-
     spawned.on('exit', () => {
         opPrint(s, 'exited')
         removeFromRunning(s)
         removeFromUpdating(s)
     })
     return spawned
+}
+
+function spawnService(s: DevService): ChildProcessWithoutNullStreams {
+    const splitCmdAndArgs = s.command.split(/\s+/)
+    const program = splitCmdAndArgs[0]
+    const args = splitCmdAndArgs.length === 1 ? [] : splitCmdAndArgs.slice(1)
+    const env = s.env ? { ...process.env, ...s.env } : undefined
+    const cwd = resolveCwd(s.cwd)
+    if (process.platform === 'win32') {
+        return spawn('cmd', ['/c', program, ...args], {
+            cwd,
+            env,
+            detached: false,
+            shell: false,
+            windowsHide: true,
+        })
+    } else {
+        return spawn(program, args, {
+            cwd,
+            env,
+            signal,
+            detached: false,
+            shell: false,
+        })
+    }
 }
 
 function removeFromRunning(s: DevService) {
@@ -227,18 +258,13 @@ function opLabel(s: DevService) {
     return `\`${s.cwd ? s.cwd + ' ' : ''}${s.command}\``
 }
 
-function logLabel(
-    cwd: string | undefined,
-    cmd: string,
-    args: Array<string>,
-    ansiColor: number,
-): string {
-    cwd = !cwd
+function logLabel(s: DevService, ansiColor: number): string {
+    s.cwd = !s.cwd
         ? './'
-        : cwd.startsWith('/')
-          ? `/.../${basename(cwd)}`
-          : cwd.startsWith('.')
-            ? cwd
-            : `./${cwd}`
-    return `\u001b[${ansiColor}m[\u001b[1m${cmd}\u001b[22m ${args.join(' ')} \u001b[2;3m${cwd}\u001b[22;23m]\u001b[0m`
+        : s.cwd.startsWith('/')
+          ? `/.../${basename(s.cwd)}`
+          : s.cwd.startsWith('.')
+            ? s.cwd
+            : `./${s.cwd}`
+    return `\u001b[${ansiColor}m[\u001b[1m${s.command}\u001b[22m \u001b[2;3m${s.cwd}\u001b[22;23m]\u001b[0m`
 }
