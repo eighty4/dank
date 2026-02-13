@@ -32,44 +32,101 @@ export type LogEvent = {
 
 type LogEventData =
     | LogEventDatum
-    | Array<LogEventDatum>
-    | Set<LogEventDatum>
-    | Record<string, LogEventDatum>
+    | LogEventDataArray
+    | LogEventDataRecord
+    | LogEventDataSet
 
 type LogEventDatum = boolean | number | string | null | undefined
+
+type LogEventDataArray = Array<LogEventDatum> | Array<LogEventDataRecord>
+
+type LogEventDataRecord = Record<
+    string,
+    LogEventDatum | LogEventDataArray | LogEventDataSet
+>
+
+type LogEventDataSet = Set<LogEventDatum>
 
 function toStringLogEvent(logEvent: LogEvent): string {
     const when = new Date().toISOString()
     const message = `[${logEvent.realm}] ${logEvent.message}\n${when}\n`
-    if (!logEvent.data) {
+    if (logEvent.data) {
+        const data: string = Object.keys(logEvent.data)
+            .sort()
+            .map(key => toStringData(key, logEvent.data![key]))
+            .join('')
+        return `${message}\n${data}`
+    } else {
         return message
     }
-    let data = ''
-    for (const k of Object.keys(logEvent.data).sort()) {
-        data += `\n    ${k} = ${toStringData(logEvent.data[k])}`
-    }
-    return `${message}${data}\n`
 }
 
-function toStringData(datum: LogEventData): string {
-    if (datum instanceof Set) {
-        datum = Array.from(datum)
+const PAD = '    '
+const nextIndent = (pad: string) => pad + PAD
+
+function toStringData(
+    key: string,
+    data: LogEventData,
+    pad: string = PAD,
+): string {
+    const prepend = `${pad}${key} = `
+    if (isDataAbsentOrScalar(data)) {
+        return `${prepend}${toStringDatum(data)}`
     }
-    if (
-        datum !== null &&
-        typeof datum === 'object' &&
-        datum.constructor.name === 'Object'
-    ) {
-        datum = Object.entries(datum).map(([k, v]) => `${k} = ${v}`)
+    if (data instanceof Set) {
+        data = Array.from(data)
     }
-    if (Array.isArray(datum)) {
-        if (datum.length === 0) {
-            return '[]'
-        } else {
-            return `[\n        ${datum.join('\n        ')}\n    ]`
-        }
+    if (Array.isArray(data)) {
+        return `${prepend}${toStringArray(data, pad)}`
     } else {
-        return `${datum}`
+        return `${prepend}${toStringRecord(data, pad)}`
+    }
+}
+
+function toStringDatum(datum: LogEventDatum): string {
+    return `${datum}\n`
+}
+
+function toStringArray(array: LogEventDataArray, padEnding: string): string {
+    if (array.length === 0) {
+        return '[]'
+    }
+    const padIndent = nextIndent(padEnding)
+    const content = array
+        .map(datum => {
+            if (isDataAbsentOrScalar(datum)) {
+                return toStringDatum(datum)
+            } else {
+                return toStringRecord(datum, padIndent)
+            }
+        })
+        .join(padIndent)
+    return `[\n${padIndent}${content}${padEnding}]\n`
+}
+
+function toStringRecord(record: LogEventDataRecord, padEnding: string): string {
+    const keys = Object.keys(record)
+    if (keys.length === 0) {
+        return '{}'
+    }
+    const padIndent = nextIndent(padEnding)
+    const content = keys
+        .map(key => toStringData(key, record[key], padIndent))
+        .join('')
+    return `{\n${content}${padEnding}}\n`
+}
+
+function isDataAbsentOrScalar(
+    data: LogEventData,
+): data is undefined | null | string | boolean | number {
+    switch (typeof data) {
+        case 'undefined':
+        case 'string':
+        case 'boolean':
+        case 'number':
+            return true
+        default:
+            return data === null
     }
 }
 
@@ -79,7 +136,7 @@ function logToConsoleAndFile(out: string) {
 }
 
 function logToConsole(out: string) {
-    console.log('\n' + out)
+    console.log(out)
 }
 
 function logToFile(out: string) {
