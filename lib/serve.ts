@@ -50,6 +50,15 @@ async function startPreviewMode() {
         frontend,
         devServices,
     )
+    const controller = new AbortController()
+    watch('dank.config.ts', controller.signal, async filename => {
+        console.log(filename, 'was updated!')
+        console.log(
+            'config updates are not hot reloaded during `dank serve --preview`',
+        )
+        console.log('restart DANK to reload configuration')
+        controller.abort()
+    })
 }
 
 type BuildContextState =
@@ -81,7 +90,7 @@ async function startDevMode() {
         devServices.update(c.services)
     })
 
-    watch(c.dirs.pages, filename => {
+    watch(c.dirs.pages, { recursive: true }, filename => {
         LOG({
             realm: 'serve',
             message: 'pages dir watch event',
