@@ -1,17 +1,12 @@
 import { watch as createWatch } from 'node:fs/promises'
 
-export async function watch(
-    p: string,
-    signal: AbortSignal,
-    fire: (filename: string) => void,
-) {
+export async function watch(p: string, fire: (filename: string) => void) {
     const delayFire = 90
     const timeout = 100
     let changes: Record<string, number> = {}
     try {
         for await (const { filename } of createWatch(p, {
             recursive: true,
-            signal,
         })) {
             if (filename) {
                 if (!changes[filename]) {

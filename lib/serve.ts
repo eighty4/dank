@@ -13,7 +13,7 @@ import {
     startWebServer,
 } from './http.ts'
 import { WebsiteRegistry, type UrlRewrite } from './registry.ts'
-import { startDevServices, updateDevServices } from './services.ts'
+import { DevServices, type ManagedServiceLabel } from './services.ts'
 import { watch } from './watch.ts'
 
 let c: ResolvedDankConfig
@@ -21,20 +21,18 @@ let c: ResolvedDankConfig
 export async function serveWebsite(): Promise<never> {
     c = await loadConfig('serve', process.cwd())
     await rm(c.dirs.buildRoot, { force: true, recursive: true })
-    const abortController = new AbortController()
-    process.once('exit', () => abortController.abort())
     if (c.flags.preview) {
-        await startPreviewMode(abortController.signal)
+        await startPreviewMode()
     } else {
-        await startDevMode(abortController.signal)
+        await startDevMode()
     }
     return new Promise(() => {})
 }
 
-async function startPreviewMode(signal: AbortSignal) {
+async function startPreviewMode() {
     const manifest = await buildWebsite(c)
     const frontend = createBuiltDistFilesFetcher(c.dirs, manifest)
-    const devServices = startDevServices(c.services, signal)
+    const devServices = launchDevServices()
     const urlRewrites: Array<UrlRewrite> = Object.keys(c.pages)
         .sort()
         .map(url => {
@@ -50,7 +48,7 @@ async function startPreviewMode(signal: AbortSignal) {
         c.dirs,
         { urlRewrites },
         frontend,
-        devServices.http,
+        devServices,
     )
 }
 
@@ -61,12 +59,12 @@ type BuildContextState =
     | 'disposing'
     | null
 
-async function startDevMode(signal: AbortSignal) {
+async function startDevMode() {
     const registry = new WebsiteRegistry(c)
     await mkdir(c.dirs.buildWatch, { recursive: true })
     let buildContext: BuildContextState = null
 
-    watch('dank.config.ts', signal, async filename => {
+    watch('dank.config.ts', async filename => {
         LOG({
             realm: 'serve',
             message: 'config watch event',
@@ -80,10 +78,10 @@ async function startDevMode(signal: AbortSignal) {
             return
         }
         registry.configSync()
-        updateDevServices(c.services)
+        devServices.update(c.services)
     })
 
-    watch(c.dirs.pages, signal, filename => {
+    watch(c.dirs.pages, filename => {
         LOG({
             realm: 'serve',
             message: 'pages dir watch event',
@@ -163,15 +161,8 @@ async function startDevMode(signal: AbortSignal) {
     resetBuildContext()
 
     const frontend = createDevServeFilesFetcher(c.esbuildPort, c.dirs, registry)
-    const devServices = startDevServices(c.services, signal)
-    startWebServer(
-        c.dankPort,
-        c.flags,
-        c.dirs,
-        registry,
-        frontend,
-        devServices.http,
-    )
+    const devServices = launchDevServices()
+    startWebServer(c.dankPort, c.flags, c.dirs, registry, frontend, devServices)
 }
 
 async function startEsbuildWatch(
@@ -219,4 +210,48 @@ async function writeHtml(html: HtmlEntrypoint, output: string) {
         },
     })
     await writeFile(path, output)
+}
+
+function launchDevServices(): DevServices {
+    const services = new DevServices(c.services)
+    services.on('error', (label, cause) =>
+        console.log(formatServiceLabel(label), 'errored:', cause),
+    )
+    services.on('exit', (label, code) => {
+        if (code) {
+            console.log(formatServiceLabel(label), 'exited', code)
+        } else {
+            console.log(formatServiceLabel(label), 'exited')
+        }
+    })
+    services.on('launch', label =>
+        console.log(formatServiceLabel(label), 'starting'),
+    )
+    services.on('stdout', (label, output) =>
+        printServiceOutput(label, 32, output),
+    )
+    services.on('stderr', (label, output) =>
+        printServiceOutput(label, 31, output),
+    )
+    return services
+}
+
+function formatServiceLabel(label: ManagedServiceLabel): string {
+    return `| \u001b[2m${label.cwd}\u001b[22m ${label.command} |`
+}
+
+function formatServiceOutputLabel(
+    label: ManagedServiceLabel,
+    color: 31 | 32,
+): string {
+    return `\u001b[${color}m${formatServiceLabel(label)}\u001b[39m`
+}
+
+function printServiceOutput(
+    label: ManagedServiceLabel,
+    color: 31 | 32,
+    output: Array<string>,
+) {
+    const formattedLabel = formatServiceOutputLabel(label, color)
+    for (const line of output) console.log(formattedLabel, line)
 }

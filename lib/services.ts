@@ -4,128 +4,225 @@ import {
     execSync,
     spawn,
 } from 'node:child_process'
+import EventEmitter from 'node:events'
 import { basename, isAbsolute, resolve } from 'node:path'
 import type { DevService, ResolvedDankConfig } from './config.ts'
 
-export type DevServices = {
-    http: HttpServices
-}
+export class ManagedServiceLabel {
+    #command: string
+    #cwd: string
 
-export type HttpServices = {
-    running: Array<HttpService>
+    constructor(spec: DevService) {
+        this.#command = spec.command
+        this.#cwd = !spec.cwd
+            ? './'
+            : spec.cwd.startsWith('/')
+              ? `/.../${basename(spec.cwd)}`
+              : spec.cwd.startsWith('.')
+                ? spec.cwd
+                : `./${spec.cwd}`
+    }
+
+    get command(): string {
+        return this.#command
+    }
+
+    get cwd(): string {
+        return this.#cwd
+    }
 }
 
 export type HttpService = NonNullable<DevService['http']>
 
-// up to date representation of dank.config.ts services
-const running: Array<{ s: DevService; process: ChildProcess | null }> = []
-
-// on Windows process.kill() and AbortSignal will not kill the process spawned with cmd.exe
-if (process.platform === 'win32') {
-    process.once('SIGINT', () => process.exit())
-    process.once('exit', () => {
-        for (const { process } of running) {
-            if (process) {
-                execSync(`taskkill /pid ${process.pid} /T /F`)
-            }
-        }
-    })
+export type DevServiceEvents = {
+    error: [label: ManagedServiceLabel, cause: string]
+    exit: [label: ManagedServiceLabel, code: number | string]
+    launch: [label: ManagedServiceLabel]
+    stdout: [label: ManagedServiceLabel, output: Array<string>]
+    stderr: [label: ManagedServiceLabel, output: Array<string>]
 }
 
-let signal: AbortSignal
+class ManagedService extends EventEmitter<DevServiceEvents> {
+    #label: ManagedServiceLabel
+    #process: ChildProcess | null
+    #spec: DevService
+    // #status: ManagedServiceStatus = 'starting'
 
-// batch of services that must be stopped before starting new services
-let updating: null | {
-    stopping: Array<DevService>
-    starting: Array<DevService>
-} = null
-
-export function startDevServices(
-    services: ResolvedDankConfig['services'],
-    _signal: AbortSignal,
-): DevServices {
-    signal = _signal
-    if (services?.length) {
-        for (const s of services) {
-            running.push({ s, process: startService(s) })
-        }
+    constructor(spec: DevService) {
+        super()
+        this.#label = new ManagedServiceLabel(spec)
+        this.#spec = spec
+        this.#process = this.#start()
     }
-    return {
-        http: {
-            get running(): Array<HttpService> {
-                return running.map(({ s }) => s.http).filter(http => !!http)
-            },
-        },
+
+    get spec(): DevService {
+        return this.#spec
+    }
+
+    get httpSpec(): HttpService | undefined {
+        return this.#spec.http
+    }
+
+    matches(other: DevService): boolean {
+        return matchingConfig(this.#spec, other)
+    }
+
+    kill() {
+        if (this.#process) killProcess(this.#process)
+    }
+
+    #start(): ChildProcess {
+        const { path, args } = parseCommand(this.#spec.command)
+        const env = this.#spec.env
+            ? { ...process.env, ...this.#spec.env }
+            : undefined
+        const cwd =
+            !this.#spec.cwd || isAbsolute(this.#spec.cwd)
+                ? this.#spec.cwd
+                : resolve(process.cwd(), this.#spec.cwd)
+        const spawned = spawnProcess(path, args, env, cwd)
+        this.emit('launch', this.#label)
+        spawned.stdout.on('data', chunk =>
+            this.emit('stdout', this.#label, parseChunk(chunk)),
+        )
+        spawned.stderr.on('data', chunk =>
+            this.emit('stderr', this.#label, parseChunk(chunk)),
+        )
+        spawned.on('error', e => {
+            if (e.name === 'AbortError') {
+                return
+            }
+            const cause =
+                'code' in e && e.code === 'ENOENT'
+                    ? 'program not found'
+                    : e.message
+            this.emit('error', this.#label, cause)
+        })
+        spawned.on('exit', (code, signal) =>
+            this.emit('exit', this.#label, code || signal!),
+        )
+        return spawned
     }
 }
 
-export function updateDevServices(services: ResolvedDankConfig['services']) {
-    if (!services?.length) {
-        if (running.length) {
-            if (updating === null) {
-                updating = { stopping: [], starting: [] }
-            }
-            running.forEach(({ s, process }) => {
-                if (process) {
-                    stopService(s, process)
-                } else {
-                    removeFromUpdating(s)
-                }
-            })
-            running.length = 0
+type SpawnProcess = (
+    program: string,
+    args: Array<string>,
+    env: NodeJS.ProcessEnv | undefined,
+    cwd: string | undefined,
+) => ChildProcessWithoutNullStreams
+
+type KillProcess = (p: ChildProcess) => void
+
+const killProcess: KillProcess =
+    process.platform === 'win32'
+        ? p => execSync(`taskkill /pid ${p.pid} /T /F`)
+        : p => p.kill()
+
+const spawnProcess: SpawnProcess =
+    process.platform === 'win32'
+        ? (
+              path: string,
+              args: Array<string>,
+              env: NodeJS.ProcessEnv | undefined,
+              cwd: string | undefined,
+          ) =>
+              spawn('cmd', ['/c', path, ...args], {
+                  cwd,
+                  env,
+                  detached: false,
+                  shell: false,
+                  windowsHide: true,
+              })
+        : (
+              path: string,
+              args: Array<string>,
+              env: NodeJS.ProcessEnv | undefined,
+              cwd: string | undefined,
+          ) =>
+              spawn(path, args, {
+                  cwd,
+                  env,
+                  detached: false,
+                  shell: false,
+              })
+
+export class DevServices extends EventEmitter<DevServiceEvents> {
+    #running: Array<ManagedService>
+
+    constructor(services: ResolvedDankConfig['services']) {
+        super()
+        this.#running = services ? this.#start(services) : []
+        if (process.platform === 'win32') {
+            process.once('SIGINT', () => process.exit())
         }
-    } else {
-        if (updating === null) {
-            updating = { stopping: [], starting: [] }
+        process.once('exit', this.shutdown)
+    }
+
+    get httpServices(): Array<HttpService> {
+        return this.#running.map(s => s.httpSpec).filter(http => !!http)
+    }
+
+    shutdown = () => {
+        this.#running.forEach(s => {
+            s.kill()
+            s.removeAllListeners()
+        })
+        this.#running.length = 0
+    }
+
+    update(services: ResolvedDankConfig['services']) {
+        if (!services?.length) {
+            this.shutdown()
+        } else if (
+            !matchingConfigs(
+                this.#running.map(s => s.spec),
+                services,
+            )
+        ) {
+            this.shutdown()
+            this.#running = this.#start(services)
         }
-        const keep = []
-        const next: Array<DevService> = []
-        for (const s of services) {
-            let found = false
-            for (let i = 0; i < running.length; i++) {
-                const p = running[i].s
-                if (matchingConfig(s, p)) {
-                    found = true
-                    keep.push(i)
-                    break
-                }
-            }
-            if (!found) {
-                next.push(s)
-            }
-        }
-        for (let i = running.length - 1; i >= 0; i--) {
-            if (!keep.includes(i)) {
-                const { s, process } = running[i]
-                if (process) {
-                    stopService(s, process)
-                } else {
-                    removeFromUpdating(s)
-                }
-                running.splice(i, 1)
-            }
-        }
-        if (updating.stopping.length) {
-            for (const s of next) {
-                if (
-                    !updating.starting.find(queued => matchingConfig(queued, s))
-                ) {
-                    updating.starting.push(s)
-                }
-            }
+    }
+
+    #start(
+        services: NonNullable<ResolvedDankConfig['services']>,
+    ): Array<ManagedService> {
+        return services.map(spec => {
+            const service = new ManagedService(spec)
+            service.on('error', (label, cause) =>
+                this.emit('error', label, cause),
+            )
+            service.on('exit', (label, code) => this.emit('exit', label, code))
+            service.on('launch', label => this.emit('launch', label))
+            service.on('stdout', (label, output) =>
+                this.emit('stdout', label, output),
+            )
+            service.on('stderr', (label, output) =>
+                this.emit('stderr', label, output),
+            )
+            return service
+        })
+    }
+}
+
+function matchingConfigs(
+    a: Array<DevService>,
+    b: NonNullable<ResolvedDankConfig['services']>,
+): boolean {
+    if (a.length !== b.length) {
+        return false
+    }
+    const crossRef = [...a]
+    for (const toFind of b) {
+        const found = crossRef.findIndex(spec => matchingConfig(spec, toFind))
+        if (found === -1) {
+            return false
         } else {
-            updating = null
-            for (const s of next) {
-                running.push({ s, process: startService(s) })
-            }
+            crossRef.splice(found, 1)
         }
     }
-}
-
-function stopService(s: DevService, process: ChildProcess) {
-    opPrint(s, 'stopping')
-    updating!.stopping.push(s)
-    process.kill()
+    return true
 }
 
 function matchingConfig(a: DevService, b: DevService): boolean {
@@ -155,86 +252,6 @@ function matchingConfig(a: DevService, b: DevService): boolean {
     return true
 }
 
-function startService(s: DevService): ChildProcess {
-    opPrint(s, 'starting')
-    const spawned = spawnService(s)
-
-    const stdoutLabel = logLabel(s, 32)
-    spawned.stdout.on('data', chunk => printChunk(stdoutLabel, chunk))
-
-    const stderrLabel = logLabel(s, 31)
-    spawned.stderr.on('data', chunk => printChunk(stderrLabel, chunk))
-
-    spawned.on('error', e => {
-        removeFromRunning(s)
-        if (e.name === 'AbortError') {
-            return
-        }
-        const cause =
-            'code' in e && e.code === 'ENOENT' ? 'program not found' : e.message
-        opPrint(s, 'error: ' + cause)
-    })
-    spawned.on('exit', () => {
-        opPrint(s, 'exited')
-        removeFromRunning(s)
-        removeFromUpdating(s)
-    })
-    return spawned
-}
-
-function spawnService(s: DevService): ChildProcessWithoutNullStreams {
-    const splitCmdAndArgs = s.command.split(/\s+/)
-    const program = splitCmdAndArgs[0]
-    const args = splitCmdAndArgs.length === 1 ? [] : splitCmdAndArgs.slice(1)
-    const env = s.env ? { ...process.env, ...s.env } : undefined
-    const cwd = resolveCwd(s.cwd)
-    if (process.platform === 'win32') {
-        return spawn('cmd', ['/c', program, ...args], {
-            cwd,
-            env,
-            detached: false,
-            shell: false,
-            windowsHide: true,
-        })
-    } else {
-        return spawn(program, args, {
-            cwd,
-            env,
-            signal,
-            detached: false,
-            shell: false,
-        })
-    }
-}
-
-function removeFromRunning(s: DevService) {
-    for (let i = 0; i < running.length; i++) {
-        if (matchingConfig(running[i].s, s)) {
-            running.splice(i, 1)
-            return
-        }
-    }
-}
-
-function removeFromUpdating(s: DevService) {
-    if (updating !== null) {
-        for (let i = 0; i < updating.stopping.length; i++) {
-            if (matchingConfig(updating.stopping[i], s)) {
-                updating.stopping.splice(i, 1)
-                if (!updating.stopping.length) {
-                    updating.starting.forEach(startService)
-                    updating = null
-                    return
-                }
-            }
-        }
-    }
-}
-
-function printChunk(label: string, c: Buffer) {
-    for (const l of parseChunk(c)) console.log(label, l)
-}
-
 function parseChunk(c: Buffer): Array<string> {
     return c
         .toString()
@@ -242,29 +259,50 @@ function parseChunk(c: Buffer): Array<string> {
         .split(/\r?\n/)
 }
 
-function resolveCwd(p?: string): string | undefined {
-    if (!p || isAbsolute(p)) {
-        return p
-    } else {
-        return resolve(process.cwd(), p)
+export function parseCommand(command: string): {
+    path: string
+    args: Array<string>
+} {
+    command = command.trimStart()
+    const programSplitIndex = command.indexOf(' ')
+    if (programSplitIndex === -1) {
+        return { path: command.trim(), args: [] }
     }
-}
-
-function opPrint(s: DevService, msg: string) {
-    console.log(opLabel(s), msg)
-}
-
-function opLabel(s: DevService) {
-    return `\`${s.cwd ? s.cwd + ' ' : ''}${s.command}\``
-}
-
-function logLabel(s: DevService, ansiColor: number): string {
-    s.cwd = !s.cwd
-        ? './'
-        : s.cwd.startsWith('/')
-          ? `/.../${basename(s.cwd)}`
-          : s.cwd.startsWith('.')
-            ? s.cwd
-            : `./${s.cwd}`
-    return `\u001b[${ansiColor}m[\u001b[1m${s.command}\u001b[22m \u001b[2;3m${s.cwd}\u001b[22;23m]\u001b[0m`
+    const path = command.substring(0, programSplitIndex)
+    const args: Array<string> = []
+    let argStart = programSplitIndex + 1
+    let withinLiteral: false | "'" | '"' = false
+    for (let i = 0; i < command.length; i++) {
+        const c = command[i]
+        if (!withinLiteral) {
+            if (c === "'" || c === '"') {
+                withinLiteral = c
+                continue
+            }
+            if (c === '\\') {
+                i++
+                continue
+            }
+        }
+        if (withinLiteral) {
+            if (c === withinLiteral) {
+                withinLiteral = false
+                args.push(command.substring(argStart + 1, i))
+                argStart = i + 1
+            }
+            continue
+        }
+        if (c === ' ' && i > argStart) {
+            const maybeArg = command.substring(argStart, i).trim()
+            if (maybeArg.length) {
+                args.push(maybeArg)
+            }
+            argStart = i + 1
+        }
+    }
+    const maybeArg = command.substring(argStart, command.length).trim()
+    if (maybeArg.length) {
+        args.push(maybeArg)
+    }
+    return { path, args }
 }

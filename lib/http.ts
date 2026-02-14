@@ -18,7 +18,7 @@ import type {
     WebsiteManifest,
     WebsiteRegistry,
 } from './registry.ts'
-import type { HttpServices } from './services.ts'
+import type { DevServices } from './services.ts'
 
 export type FrontendFetcher = (
     url: URL,
@@ -33,7 +33,7 @@ export function startWebServer(
     dirs: DankDirectories,
     urlRewriteProvider: UrlRewriteProvider,
     frontendFetcher: FrontendFetcher,
-    httpServices: HttpServices,
+    devServices: DevServices,
 ) {
     const serverAddress = 'http://localhost:' + port
     const handler = (req: IncomingMessage, res: ServerResponse) => {
@@ -47,7 +47,7 @@ export function startWebServer(
                     req,
                     url,
                     headers,
-                    httpServices,
+                    devServices,
                     flags,
                     dirs,
                     urlRewriteProvider,
@@ -69,7 +69,7 @@ async function onNotFound(
     req: IncomingMessage,
     url: URL,
     headers: Headers,
-    httpServices: HttpServices,
+    devServices: DevServices,
     flags: DankFlags,
     dirs: DankDirectories,
     urlRewriteProvider: UrlRewriteProvider,
@@ -87,7 +87,7 @@ async function onNotFound(
             return
         }
     }
-    const fetchResponse = await tryHttpServices(req, url, headers, httpServices)
+    const fetchResponse = await tryHttpServices(req, url, headers, devServices)
     if (fetchResponse) {
         sendFetchResponse(res, fetchResponse)
     } else {
@@ -131,14 +131,13 @@ async function tryHttpServices(
     req: IncomingMessage,
     url: URL,
     headers: Headers,
-    httpServices: HttpServices,
+    devServices: DevServices,
 ): Promise<Response | null> {
     if (url.pathname.startsWith('/.well-known/')) {
         return null
     }
     const body = await collectReqBody(req)
-    const { running } = httpServices
-    for (const httpService of running) {
+    for (const httpService of devServices.httpServices) {
         const proxyUrl = new URL(url)
         proxyUrl.port = `${httpService.port}`
         try {
