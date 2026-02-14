@@ -5,7 +5,7 @@ import {
     spawn,
 } from 'node:child_process'
 import EventEmitter from 'node:events'
-import { readFile, mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { readFile, mkdir, mkdtemp, writeFile, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { waitForEsbuildServe } from './esbuild_events_testing.ts'
@@ -145,7 +145,7 @@ export async function testDir(
     const dir = await mkdtemp(join(tmpdir(), 'dank-test-'))
     await Promise.all([mkdir(join(dir, 'pages')), mkdir(join(dir, 'public'))])
     await setupScaffolding(dir, scaffolding)
-    const dirs = await defaultProjectDirs(dir)
+    const dirs = await defaultProjectDirs(await realpath(dir))
     return { dirs, resolver: Resolver.create(dirs) }
 }
 
@@ -212,7 +212,7 @@ export async function createDank(
     await npmCreateDank(dir)
     await npmInstall(dir)
     await setupScaffolding(dir, scaffolding)
-    return new DankTestProject(dir)
+    return new DankTestProject(await realpath(dir))
 }
 
 async function npmCreateDank(dir: string) {

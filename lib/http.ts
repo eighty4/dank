@@ -198,7 +198,7 @@ export function createBuiltDistFilesFetcher(
         if (manifest.pageUrls.has(url.pathname)) {
             streamFile(
                 join(
-                    dirs.projectResolved,
+                    dirs.projectRootAbs,
                     dirs.buildDist,
                     url.pathname,
                     'index.html',
@@ -207,7 +207,7 @@ export function createBuiltDistFilesFetcher(
             )
         } else if (manifest.files.has(url.pathname)) {
             streamFile(
-                join(dirs.projectResolved, dirs.buildDist, url.pathname),
+                join(dirs.projectRootAbs, dirs.buildDist, url.pathname),
                 res,
             )
         } else {

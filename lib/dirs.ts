@@ -7,8 +7,7 @@ export type DankDirectories = {
     buildWatch: string
     buildDist: string
     pages: string
-    pagesResolved: string
-    projectResolved: string
+    pagesAbs: string
     projectRootAbs: string
     public: string
 }
@@ -17,18 +16,18 @@ export async function defaultProjectDirs(
     projectRootAbs: string,
 ): Promise<Readonly<DankDirectories>> {
     if (!isAbsolute(projectRootAbs)) {
-        throw Error()
+        throw Error('must use an absolute project root path')
     }
-    const projectResolved = await realpath(projectRootAbs)
+    if ((await realpath(projectRootAbs)) !== projectRootAbs) {
+        throw Error('must use a real project root path')
+    }
     const pages = 'pages'
-    const pagesResolved = join(projectResolved, pages)
     return Object.freeze({
         buildRoot: 'build',
         buildDist: join('build', 'dist'),
         buildWatch: join('build', 'watch'),
         pages,
-        pagesResolved,
-        projectResolved,
+        pagesAbs: join(projectRootAbs, pages),
         projectRootAbs,
         public: 'public',
     })
@@ -63,8 +62,8 @@ export class Resolver {
 
     // `p` is expected to be a relative path resolvable from the project dir
     isProjectSubpathInPagesDir(p: string): boolean {
-        return resolve(join(this.#dirs.projectResolved, p)).startsWith(
-            this.#dirs.pagesResolved,
+        return resolve(join(this.#dirs.projectRootAbs, p)).startsWith(
+            this.#dirs.pagesAbs,
         )
     }
 

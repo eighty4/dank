@@ -20,7 +20,7 @@ jobs:
   test-dank:
     strategy:
       matrix:
-        os: [ubuntu, windows]
+        os: [macos, ubuntu, windows]
     name: 'test-dank-${{ matrix.os }}'
     runs-on: '${{ matrix.os }}-latest'
     steps:
