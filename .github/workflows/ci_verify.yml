@@ -32,7 +32,7 @@ jobs:
           cache: pnpm
       - run: pnpm i
       - run: pnpm build
-      - run: pnpm test
+      - run: pnpm test --test-concurrency=1
 
   verify-dank:
     runs-on: ubuntu-latest
