@@ -4,6 +4,9 @@
 
 ### Added
 
+- `dank.config.ts` supports a `buildTag` string expression or builder
+  function to customize the website's build tag using expression
+  placeholders like `{{date}}-{{gitHash}}` to inject build metadata
 - Builds and CICD verify Linux, MacOS and Windows compat
 
 ### Fixed

@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from 'node:path'
+import { createBuildTag } from './build_tag.ts'
 import type {
     DankConfig,
     DankDetails,
@@ -34,6 +35,8 @@ export type ResolvedDankConfig = {
     get devPages(): Readonly<DankConfig['devPages']>
     get services(): Readonly<DankConfig['services']>
 
+    buildTag(): Promise<string>
+
     reload(): Promise<void>
 }
 
@@ -60,6 +63,7 @@ export async function loadConfig(
 }
 
 class DankConfigInternal implements ResolvedDankConfig {
+    #buildTag: DankConfig['buildTag']
     #dirs: Readonly<DankDirectories>
     #flags: Readonly<DankFlags>
     #mode: 'build' | 'serve'
@@ -119,11 +123,20 @@ class DankConfigInternal implements ResolvedDankConfig {
         return this.#services
     }
 
+    async buildTag(): Promise<string> {
+        return await createBuildTag(
+            this.#dirs.projectRootAbs,
+            this.#flags,
+            this.#buildTag,
+        )
+    }
+
     async reload() {
         const userConfig = await resolveConfig(
             this.#modulePath,
             resolveDankDetails(this.#mode, this.#flags),
         )
+        this.#buildTag = userConfig.buildTag
         this.#dankPort = resolveDankPort(this.#flags, userConfig)
         this.#esbuildPort = resolveEsbuildPort(this.#flags, userConfig)
         this.#esbuild = Object.freeze(userConfig.esbuild)
@@ -173,6 +186,7 @@ function resolveDankDetails(
 function validateDankConfig(c: Partial<DankConfig>) {
     try {
         validatePorts(c)
+        validateBuildTag(c.buildTag)
         validatePages(c.pages)
         validateDevPages(c.devPages)
         validateDevServices(c.services)
@@ -199,6 +213,20 @@ function validatePorts(c: Partial<DankConfig>) {
         if (typeof c.previewPort !== 'number') {
             throw Error('DankConfig.previewPort must be a number')
         }
+    }
+}
+
+function validateBuildTag(buildTag: DankConfig['buildTag']) {
+    if (buildTag === null) {
+        return
+    }
+    switch (typeof buildTag) {
+        case 'undefined':
+        case 'string':
+        case 'function':
+            return
+        default:
+            throw Error('DankConfig.buildTag must be a string or function')
     }
 }
 

@@ -1,6 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createBuildTag } from './build_tag.ts'
 import { loadConfig, type ResolvedDankConfig } from './config.ts'
 import { type DefineDankGlobal, createGlobalDefinitions } from './define.ts'
 import type { DankDirectories } from './dirs.ts'
@@ -14,7 +13,7 @@ export async function buildWebsite(
     if (!c) {
         c = await loadConfig('build', process.cwd())
     }
-    const buildTag = await createBuildTag(c.flags)
+    const buildTag = await c.buildTag()
     console.log(
         c.flags.minify
             ? c.flags.production

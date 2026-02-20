@@ -1,8 +1,8 @@
 import type { Plugin as EsbuildPlugin } from 'esbuild'
 
 export type DankConfig = {
-    // used for releases and service worker caching
-    // buildTag?:  (() => Promise<string> | string) | string
+    // used for service worker caching
+    buildTag?: string | BuildTagBuilder
 
     // customize esbuild configs
     esbuild?: EsbuildConfig
@@ -25,6 +25,14 @@ export type DankConfig = {
     // dev services launched during `dank serve`
     services?: Array<DevService>
 }
+
+export type BuildTagParams = {
+    production: boolean
+}
+
+export type BuildTagBuilder = (
+    build: BuildTagParams,
+) => Promise<string> | string
 
 // extend an html entrypoint with url rewriting similar to cdn configurations
 // after trying all webpage, bundle and asset paths, mapping patterns
