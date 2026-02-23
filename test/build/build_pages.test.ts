@@ -18,11 +18,11 @@ suite('building pages', () => {
                 'utf8',
             )
             const website = JSON.parse(websiteJson)
-            assert.equal('buildTag' in website, true)
-            assert.equal('files' in website, true)
-            assert.equal(website.files.includes('/index.html'), true)
-            assert.equal('pageUrls' in website, true)
-            assert.equal(website.pageUrls.includes('/'), true)
+            assert.ok('buildTag' in website)
+            assert.ok('files' in website)
+            assert.ok('pageUrls' in website)
+            assert.ok(website.files.includes('/index.html'))
+            assert.ok(website.pageUrls.includes('/'))
         })
     })
     suite('succeeds', () => {

@@ -75,6 +75,7 @@ export async function esbuildWorkers(
 function commonBuildOptions(r: WebsiteRegistry): BuildOptions {
     const p = workersPlugin(r.buildRegistry())
     return {
+        absWorkingDir: r.config.dirs.projectRootAbs,
         assetNames: 'assets/[name]-[hash]',
         bundle: true,
         format: 'esm',

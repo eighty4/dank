@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
 import { suite, test } from 'node:test'
-import esbuild from 'esbuild'
 import { createDank } from './dank_project_testing.ts'
-import { workersPlugin } from '../lib/esbuild.ts'
+import { esbuildWebpages } from '../lib/esbuild.ts'
 import { WebsiteRegistry } from '../lib/registry.ts'
 
 suite('registry.ts', () => {
@@ -23,14 +22,17 @@ suite('registry.ts', () => {
                     )
                     let workersEvent = 0
                     registry.on('workers', () => workersEvent++)
+                    const define = {
+                        'dank.IS_DEV': 'true',
+                        'dank.IS_PROD': 'false',
+                    }
                     for (let i = 0; i < 5; i++) {
-                        await esbuild.build({
-                            absWorkingDir: project.dir,
-                            entryPoints: ['pages/mega-performant-ui-thread.ts'],
-                            metafile: true,
-                            plugins: [workersPlugin(registry.buildRegistry())],
-                            write: false,
-                        })
+                        await esbuildWebpages(registry, define, [
+                            {
+                                in: 'pages/mega-performant-ui-thread.ts',
+                                out: 'mega-performant-ui-thread.ts',
+                            },
+                        ])
                     }
                     assert.equal(workersEvent, 1)
                     assert.deepEqual(registry.workerEntryPoints, [

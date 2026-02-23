@@ -1,11 +1,12 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { loadConfig, type ResolvedDankConfig } from './config.ts'
+import type { ServiceWorkerBuild, WebsiteManifest } from './dank.ts'
 import { type DefineDankGlobal, createGlobalDefinitions } from './define.ts'
 import type { DankDirectories } from './dirs.ts'
 import { esbuildWebpages, esbuildWorkers } from './esbuild.ts'
 import { copyAssets } from './public.ts'
-import { type WebsiteManifest, WebsiteRegistry } from './registry.ts'
+import { WebsiteRegistry } from './registry.ts'
 
 export async function buildWebsite(
     c?: ResolvedDankConfig,
@@ -13,7 +14,6 @@ export async function buildWebsite(
     if (!c) {
         c = await loadConfig('build', process.cwd())
     }
-    const buildTag = await c.buildTag()
     console.log(
         c.flags.minify
             ? c.flags.production
@@ -21,7 +21,7 @@ export async function buildWebsite(
                 : 'minified'
             : 'unminified',
         'build',
-        buildTag,
+        await c.buildTag(),
         'building in ./build/dist',
     )
     await rm(c.dirs.buildRoot, { recursive: true, force: true })
@@ -31,7 +31,7 @@ export async function buildWebsite(
     }
     await mkdir(join(c.dirs.buildRoot, 'metafiles'), { recursive: true })
     const registry = await buildWebpages(c, createGlobalDefinitions(c))
-    return await registry.writeManifest(buildTag)
+    return await registry.writeManifest()
 }
 
 // builds all webpage entrypoints in one esbuild.build context to support code splitting
@@ -62,6 +62,7 @@ async function buildWebpages(
             )
         }),
     )
+    await buildServiceWorker(registry)
     return registry
 }
 
@@ -126,4 +127,56 @@ export function createWorkerRegex(
         `new(?:\\s|\\r?\\n)+${workerCtor}(?:\\s|\\r?\\n)*\\((?:\\s|\\r?\\n)*['"]${workerUrl}['"](?:\\s|\\r?\\n)*\\)`,
         'g',
     )
+}
+
+async function buildServiceWorker(registry: WebsiteRegistry) {
+    const serviceWorkerBuilder = registry.config.serviceWorkerBuilder
+    if (serviceWorkerBuilder) {
+        const website = await registry.manifest()
+        const serviceWorkerBuild = await serviceWorkerBuilder({ website })
+        validateServiceWorkerBuild(serviceWorkerBuild)
+        serviceWorkerBuild.outputs.map(async (output, i) => {
+            try {
+                return await registry.addBuildOutput(output.url, output.content)
+            } catch {
+                console.log(
+                    `ServiceWorkerBuild.outputs[${i}].url \`${output.url}\` is already a url in the build output.`,
+                )
+                process.exit(1)
+            }
+        })
+    }
+}
+
+function validateServiceWorkerBuild(
+    serviceWorkerBuild: ServiceWorkerBuild,
+): void | never {
+    if (
+        serviceWorkerBuild === null ||
+        typeof serviceWorkerBuild === 'undefined'
+    ) {
+        console.log(`ServiceWorkerBuild is ${serviceWorkerBuild}.`)
+        console.log(
+            '\nMake sure the builder function \`serviceWorker\` in \`dank.config.ts\` is returning a ServiceWorkerBuild.',
+        )
+        process.exit(1)
+    }
+    const testUrlPattern = /^\/.*\.js$/
+    const valid = true
+    serviceWorkerBuild.outputs.forEach((output, i) => {
+        if (!output.content?.length) {
+            console.log(`ServiceWorkerBuild.outputs[${i}].content is empty.`)
+        }
+        if (!output.url?.length || !testUrlPattern.test(output.url)) {
+            console.log(
+                `ServiceWorkerBuild.outputs[${i}].url is not a valid \`/*.js\` path.`,
+            )
+        }
+    })
+    if (!valid) {
+        console.log(
+            '\nCheck your \`serviceWorker\` config in \`dank.config.ts\`.',
+        )
+        process.exit(1)
+    }
 }

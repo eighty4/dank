@@ -24,6 +24,10 @@ export type DankConfig = {
 
     // dev services launched during `dank serve`
     services?: Array<DevService>
+
+    // generate a service worker for `dank build --production`
+    // and when previewing with `dank serve --preview`
+    serviceWorker?: ServiceWorkerBuilder
 }
 
 export type BuildTagParams = {
@@ -99,3 +103,33 @@ export function defineConfig(
 ): Partial<DankConfig> | DankConfigFunction {
     return config
 }
+
+// summary of a website build, written to `build` dir
+// and provided via ServiceWorkerParams to build a service worker from
+export type WebsiteManifest = {
+    buildTag: string
+    files: Array<`/${string}`>
+    pageUrls: Array<`/${string}`>
+}
+
+export type ServiceWorkerParams = {
+    website: WebsiteManifest
+}
+
+export type ServiceWorkerBuild = {
+    // outputs will be written to the build's dist
+    // and added to the manifest written to website.json
+    outputs: Array<{
+        url: `/${string}.js`
+        content: string
+    }>
+}
+
+export type ServiceWorkerBuilder = (
+    params: ServiceWorkerParams,
+) => ServiceWorkerBuild | Promise<ServiceWorkerBuild>
+
+export {
+    createServiceWorker,
+    type ServiceWorkerCaching,
+} from './service_worker.ts'

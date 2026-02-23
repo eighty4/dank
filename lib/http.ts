@@ -10,12 +10,12 @@ import {
 import { extname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import mime from 'mime'
+import type { WebsiteManifest } from './dank.ts'
 import type { DankDirectories } from './dirs.ts'
 import type { DankFlags } from './flags.ts'
 import type {
     UrlRewrite,
     UrlRewriteProvider,
-    WebsiteManifest,
     WebsiteRegistry,
 } from './registry.ts'
 import type { DevServices } from './services.ts'
@@ -194,7 +194,7 @@ export function createBuiltDistFilesFetcher(
         res: ServerResponse,
         notFound: () => void,
     ) => {
-        if (manifest.pageUrls.has(url.pathname)) {
+        if (manifest.pageUrls.includes(url.pathname as `/${string}`)) {
             streamFile(
                 join(
                     dirs.projectRootAbs,
@@ -204,7 +204,7 @@ export function createBuiltDistFilesFetcher(
                 ),
                 res,
             )
-        } else if (manifest.files.has(url.pathname)) {
+        } else if (manifest.files.includes(url.pathname as `/${string}`)) {
             streamFile(
                 join(dirs.projectRootAbs, dirs.buildDist, url.pathname),
                 res,

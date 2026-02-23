@@ -48,7 +48,7 @@ suite('build_tag.ts', () => {
                     createBuildTag(process.cwd(), {} as DankFlags, 'make-$$$'),
                 )
             })
-            test.only('when expression uses `gitHash` outside of git repo', async () => {
+            test('when expression uses `gitHash` outside of git repo', async () => {
                 const { dirs } = await testDir()
                 await assert.rejects(
                     () =>

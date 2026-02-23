@@ -3,18 +3,11 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path/posix'
 import type { BuildResult } from 'esbuild'
 import type { ResolvedDankConfig } from './config.ts'
-import type { PageMapping } from './dank.ts'
+import type { PageMapping, WebsiteManifest } from './dank.ts'
 import { LOG } from './developer.ts'
 import { Resolver, type DankDirectories } from './dirs.ts'
 import type { EntryPoint } from './esbuild.ts'
 import { HtmlEntrypoint } from './html.ts'
-
-// summary of a website build
-export type WebsiteManifest = {
-    buildTag: string
-    files: Set<string>
-    pageUrls: Set<string>
-}
 
 // result of an esbuild build from the context of the config's entrypoints
 // path of entrypoint is the reference point to lookup from a dependent page
@@ -67,12 +60,13 @@ export type UrlRewriteProvider = {
 // manages website resources during `dank build` and `dank serve`
 export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
     // paths of bundled esbuild outputs, as built by esbuild
-    #bundles: Set<string> = new Set()
+    #bundles: Set<`/${string}`> = new Set()
     #c: ResolvedDankConfig
     // public dir assets
-    #copiedAssets: Set<string> | null = null
+    #copiedAssets: Set<`/${string}`> | null = null
     // map of entrypoints to their output path
     #entrypointHrefs: Record<string, string | null> = {}
+    #otherOutputs: Set<`/${string}`> | null = null
     #pages: Record<`/${string}`, WebpageRegistration> = {}
     readonly #resolver: Resolver
     #workers: Array<WorkerManifest> | null = null
@@ -87,13 +81,21 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         return this.#c
     }
 
-    set copiedAssets(copiedAssets: Array<string> | null) {
+    set copiedAssets(copiedAssets: Array<`/${string}`> | null) {
         this.#copiedAssets =
             copiedAssets === null ? null : new Set(copiedAssets)
     }
 
     get htmlEntrypoints(): Array<HtmlEntrypoint> {
         return Object.values(this.#pages).map(p => p.html)
+    }
+
+    async manifest(): Promise<WebsiteManifest> {
+        return {
+            buildTag: await this.#c.buildTag(),
+            files: this.files(),
+            pageUrls: Object.keys(this.#pages) as Array<`/${string}`>,
+        }
     }
 
     get pageUrls(): Array<string> {
@@ -159,6 +161,27 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         return this.#workers
     }
 
+    // add a build output that does is manually injected into build output,
+    // not from HTML processing, public directory, or esbuild entrypoints
+    async addBuildOutput(url: `/${string}`, content: string) {
+        if (
+            this.#pages[url] ||
+            this.#bundles.has(url) ||
+            this.#otherOutputs?.has(url) ||
+            this.#copiedAssets?.has(url)
+        ) {
+            throw Error('build already has a ' + url)
+        }
+        if (this.#otherOutputs === null) this.#otherOutputs = new Set()
+        this.#otherOutputs.add(url)
+        const outputPath = join(
+            this.#c.dirs.projectRootAbs,
+            this.#c.dirs.buildDist,
+            url,
+        )
+        await writeFile(outputPath, content)
+    }
+
     buildRegistry(): BuildRegistry {
         return new BuildRegistry(
             this.#c.dirs,
@@ -171,13 +194,18 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         this.#configDiff()
     }
 
-    files(): Set<string> {
-        const files = new Set<string>()
+    files(): Array<`/${string}`> {
+        const files = new Set<`/${string}`>()
         for (const pageUrl of Object.keys(this.#pages))
-            files.add(pageUrl === '/' ? '/index.html' : `${pageUrl}/index.html`)
+            files.add(
+                pageUrl === '/'
+                    ? '/index.html'
+                    : (`${pageUrl}/index.html` as `/${string}`),
+            )
         for (const f of this.#bundles) files.add(f)
         if (this.#copiedAssets) for (const f of this.#copiedAssets) files.add(f)
-        return files
+        if (this.#otherOutputs) for (const f of this.#otherOutputs) files.add(f)
+        return Array.from(files)
     }
 
     mappedHref(lookup: string): string {
@@ -189,23 +217,15 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         }
     }
 
-    async writeManifest(buildTag: string): Promise<WebsiteManifest> {
-        const manifest = this.#manifest(buildTag)
+    async writeManifest(): Promise<WebsiteManifest> {
+        const manifest = await this.#manifest()
         await writeFile(
             join(
                 this.#c.dirs.projectRootAbs,
                 this.#c.dirs.buildRoot,
                 'website.json',
             ),
-            JSON.stringify(
-                {
-                    buildTag,
-                    files: Array.from(manifest.files),
-                    pageUrls: Array.from(manifest.pageUrls),
-                },
-                null,
-                4,
-            ),
+            JSON.stringify(manifest, null, 4),
         )
         return manifest
     }
@@ -303,18 +323,18 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         delete this.#pages[urlPath]
     }
 
-    #manifest(buildTag: string): WebsiteManifest {
+    async #manifest(): Promise<WebsiteManifest> {
         return {
-            buildTag,
+            buildTag: await this.#c.buildTag(),
             files: this.files(),
-            pageUrls: new Set(Object.keys(this.#pages)),
+            pageUrls: Object.keys(this.#pages) as Array<`/${string}`>,
         }
     }
 
     #onBuildManifest: OnBuildComplete = (build: BuildManifest) => {
         // collect built bundle entrypoint hrefs
         for (const [outPath, entrypoint] of Object.entries(build.bundles)) {
-            this.#bundles.add(outPath)
+            this.#bundles.add(ensurePath(outPath))
             if (entrypoint) {
                 this.#entrypointHrefs[entrypoint] = outPath
             }
@@ -413,7 +433,7 @@ export class BuildRegistry {
         for (const [outPath, output] of Object.entries(
             result.metafile.outputs,
         )) {
-            bundles[outPath.replace(/^build[/\\]dist/, '')] =
+            bundles[outPath.replace(/^build[/\\](dist|watch)/, '')] =
                 output.entryPoint || null
         }
         let workers: BuildManifest['workers'] = null
@@ -436,5 +456,13 @@ export class BuildRegistry {
             bundles,
             workers,
         })
+    }
+}
+
+function ensurePath(path: string): `/${string}` {
+    if (path.startsWith('/')) {
+        return path as `/${string}`
+    } else {
+        throw Error(`expect build dist path ${path} to start with /`)
     }
 }

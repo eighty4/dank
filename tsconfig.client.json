@@ -2,11 +2,10 @@
     "extends": "./tsconfig.json",
     "compilerOptions": {
         "lib": ["DOM", "DOM.Iterable", "ESNext"],
-        "declaration": false,
         "rootDir": "client",
-        "outDir": "client",
         "noEmit": true
     },
     "files": ["client/Client.d.ts"],
-    "include": ["client/*.ts"]
+    "include": ["client/*.ts"],
+    "exclude": ["client/ServiceWorker.*"]
 }

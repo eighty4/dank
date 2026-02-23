@@ -10,12 +10,13 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { waitForEsbuildServe } from './esbuild_events_testing.ts'
 import { getAvailablePort, waitForPort } from './ports.ts'
+import { loadConfig, type ResolvedDankConfig } from '../lib/config.ts'
+import type { WebsiteManifest } from '../lib/dank.ts'
 import {
     defaultProjectDirs,
     Resolver,
     type DankDirectories,
 } from '../lib/dirs.ts'
-import { loadConfig, type ResolvedDankConfig } from '../lib/config.ts'
 
 const DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true'
 
@@ -182,6 +183,16 @@ class DankTestProject {
 
     path(...p: Array<string>): string {
         return join(this.#dir, ...p)
+    }
+
+    async readFromBuild(path: string): Promise<string> {
+        return await readFile(this.path(join('build/dist', path)), 'utf8')
+    }
+
+    async readManifest(): Promise<WebsiteManifest> {
+        return JSON.parse(
+            await readFile(this.path('build/website.json'), 'utf8'),
+        )
     }
 
     async update(path: string, content: DankCreated | string) {
@@ -394,6 +405,14 @@ export class DankServing extends EventEmitter<DankServingEvents> {
         }
     }
 
+    shutdown() {
+        this.#process?.removeAllListeners()
+        this.#process?.stdout.removeAllListeners()
+        this.#process?.stderr.removeAllListeners()
+        this.#process?.kill()
+        this.removeAllListeners()
+    }
+
     #appendOutput(s: string) {
         if (DEBUG) console.log(s)
         this.#output += s
@@ -414,11 +433,7 @@ export class DankServing extends EventEmitter<DankServingEvents> {
     [Symbol.dispose]() {
         if (DEBUG)
             console.debug('disposing `dank serve` process and event emitters')
-        this.#process?.removeAllListeners()
-        this.#process?.stdout.removeAllListeners()
-        this.#process?.stderr.removeAllListeners()
-        this.#process?.kill()
-        this.removeAllListeners()
+        this.shutdown()
     }
 }
 

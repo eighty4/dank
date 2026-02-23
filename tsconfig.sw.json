@@ -1,0 +1,10 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "lib": ["DOM", "DOM.Iterable", "WebWorker", "ESNext"],
+        "rootDir": ".",
+        "noEmit": true
+    },
+    "files": ["client/ServiceWorker.d.ts"],
+    "include": ["client/ServiceWorker.ts", "lib/dank.ts"]
+}

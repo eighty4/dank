@@ -5,7 +5,7 @@ import type { DankDirectories } from './dirs.ts'
 
 export async function copyAssets(
     dirs: DankDirectories,
-): Promise<Array<string> | null> {
+): Promise<Array<`/${string}`> | null> {
     try {
         const stats = await stat(dirs.public)
         if (stats.isDirectory()) {
@@ -24,8 +24,8 @@ const IGNORE = platform() === 'darwin' ? ['.DS_Store'] : []
 async function recursiveCopyAssets(
     dirs: DankDirectories,
     dir: string = '',
-): Promise<Array<string>> {
-    const copied: Array<string> = []
+): Promise<Array<`/${string}`>> {
+    const copied: Array<`/${string}`> = []
     const to = join(dirs.buildDist, dir)
     let madeDir = dir === ''
     const listingDir = join(dirs.public, dir)
@@ -45,7 +45,7 @@ async function recursiveCopyAssets(
                     madeDir = true
                 }
                 await copyFile(join(listingDir, p), join(to, p))
-                copied.push('/' + join(dir, p).replaceAll('\\', '/'))
+                copied.push(`/${join(dir, p).replaceAll('\\', '/')}`)
             }
         } catch (e) {
             console.error('stat error', e)

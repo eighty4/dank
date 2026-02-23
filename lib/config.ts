@@ -5,6 +5,7 @@ import type {
     DankDetails,
     EsbuildConfig,
     PageMapping,
+    ServiceWorkerBuilder,
 } from './dank.ts'
 import { LOG } from './developer.ts'
 import { defaultProjectDirs, type DankDirectories } from './dirs.ts'
@@ -22,7 +23,7 @@ const DEFAULT_CONFIG_PATH = './dank.config.ts'
 export type { DevService } from './dank.ts'
 
 export type ResolvedDankConfig = {
-    // static from process boot
+    // static config that does not hot reload during `dank serve`
     get dirs(): Readonly<DankDirectories>
     get flags(): Readonly<Omit<DankFlags, 'dankPort' | 'esbuildPort'>>
     get mode(): 'build' | 'serve'
@@ -34,6 +35,7 @@ export type ResolvedDankConfig = {
     get pages(): Readonly<Record<`/${string}`, PageMapping>>
     get devPages(): Readonly<DankConfig['devPages']>
     get services(): Readonly<DankConfig['services']>
+    get serviceWorkerBuilder(): DankConfig['serviceWorker']
 
     buildTag(): Promise<string>
 
@@ -63,11 +65,13 @@ export async function loadConfig(
 }
 
 class DankConfigInternal implements ResolvedDankConfig {
-    #buildTag: DankConfig['buildTag']
+    #buildTag: Promise<string> | null = null
+    #buildTagBuilder: DankConfig['buildTag']
     #dirs: Readonly<DankDirectories>
     #flags: Readonly<DankFlags>
     #mode: 'build' | 'serve'
     #modulePath: string
+    #serviceWorkerBuilder?: ServiceWorkerBuilder
 
     #dankPort: number = DEFAULT_DEV_PORT
     #esbuildPort: number = DEFAULT_ESBUILD_PORT
@@ -123,12 +127,19 @@ class DankConfigInternal implements ResolvedDankConfig {
         return this.#services
     }
 
-    async buildTag(): Promise<string> {
-        return await createBuildTag(
-            this.#dirs.projectRootAbs,
-            this.#flags,
-            this.#buildTag,
-        )
+    get serviceWorkerBuilder(): DankConfig['serviceWorker'] {
+        return this.#serviceWorkerBuilder
+    }
+
+    buildTag(): Promise<string> {
+        if (this.#buildTag === null) {
+            this.#buildTag = createBuildTag(
+                this.#dirs.projectRootAbs,
+                this.#flags,
+                this.#buildTagBuilder,
+            )
+        }
+        return this.#buildTag
     }
 
     async reload() {
@@ -136,13 +147,15 @@ class DankConfigInternal implements ResolvedDankConfig {
             this.#modulePath,
             resolveDankDetails(this.#mode, this.#flags),
         )
-        this.#buildTag = userConfig.buildTag
+        this.#buildTag = null
+        this.#buildTagBuilder = userConfig.buildTag
         this.#dankPort = resolveDankPort(this.#flags, userConfig)
         this.#esbuildPort = resolveEsbuildPort(this.#flags, userConfig)
         this.#esbuild = Object.freeze(userConfig.esbuild)
         this.#pages = Object.freeze(normalizePages(userConfig.pages))
         this.#devPages = Object.freeze(userConfig.devPages)
         this.#services = Object.freeze(userConfig.services)
+        this.#serviceWorkerBuilder = userConfig.serviceWorker
     }
 }
 
@@ -191,6 +204,7 @@ function validateDankConfig(c: Partial<DankConfig>) {
         validateDevPages(c.devPages)
         validateDevServices(c.services)
         validateEsbuildConfig(c.esbuild)
+        validateServiceWorker(c.serviceWorker)
     } catch (e: any) {
         LOG({
             realm: 'config',
@@ -227,6 +241,19 @@ function validateBuildTag(buildTag: DankConfig['buildTag']) {
             return
         default:
             throw Error('DankConfig.buildTag must be a string or function')
+    }
+}
+
+function validateServiceWorker(serviceWorker: DankConfig['serviceWorker']) {
+    if (serviceWorker === null) {
+        return
+    }
+    switch (typeof serviceWorker) {
+        case 'undefined':
+        case 'function':
+            return
+        default:
+            throw Error('DankConfig.serviceWorker must be a function')
     }
 }
 
