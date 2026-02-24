@@ -5,9 +5,16 @@ import {
     spawn,
 } from 'node:child_process'
 import EventEmitter from 'node:events'
-import { readFile, mkdir, mkdtemp, writeFile, realpath } from 'node:fs/promises'
+import {
+    readdir,
+    readFile,
+    mkdir,
+    mkdtemp,
+    writeFile,
+    realpath,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import { waitForEsbuildServe } from './esbuild_events_testing.ts'
 import { getAvailablePort, waitForPort } from './ports.ts'
 import { loadConfig, type ResolvedDankConfig } from '../lib/config.ts'
@@ -187,6 +194,34 @@ class DankTestProject {
 
     async readFromBuild(path: string): Promise<string> {
         return await readFile(this.path(join('build/dist', path)), 'utf8')
+    }
+
+    // reads a build/dist output with a content hash by doing a readdir
+    // and matching filename before content hash
+    async readBundleOutputFromBuild(entrypoint: string) {
+        if (entrypoint.startsWith('pages')) {
+            entrypoint = entrypoint.substring(6)
+        }
+        const ext = extname(entrypoint) === 'css' ? 'css' : 'js'
+        const filename = basename(entrypoint)
+        const dir = this.path('build/dist', dirname(entrypoint))
+        const files = await readdir(dir)
+        const regex = new RegExp(
+            `${filename.substring(0, filename.indexOf('.'))}-[A-Z\\d]{8}\\.${ext}$`,
+        )
+        const matches = files.filter(p => regex.test(p))
+        switch (matches.length) {
+            case 0:
+                throw Error(
+                    `no matches in ${dir} for file ${basename(entrypoint)}`,
+                )
+            case 1:
+                return await readFile(join(dir, matches[0]), 'utf8')
+            default:
+                throw Error(
+                    `> 1 match in ${dir} for file ${basename(entrypoint)}: ${matches.join(', ')}`,
+                )
+        }
     }
 
     async readManifest(): Promise<WebsiteManifest> {

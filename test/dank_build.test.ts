@@ -6,26 +6,26 @@ import {
     DankCreated,
     readReplaceWrite,
     readTest,
-} from '../dank_project_testing.ts'
+} from './dank_project_testing.ts'
 
-suite('building pages', () => {
-    suite('build manifest', () => {
-        test('is written to build dir', async () => {
-            const project = await createDank()
-            await project.build()
-            const websiteJson = await readFile(
-                project.path('build/website.json'),
-                'utf8',
-            )
-            const website = JSON.parse(websiteJson)
-            assert.ok('buildTag' in website)
-            assert.ok('files' in website)
-            assert.ok('pageUrls' in website)
-            assert.ok(website.files.includes('/index.html'))
-            assert.ok(website.pageUrls.includes('/'))
-        })
-    })
+suite('`dank build`', () => {
     suite('succeeds', () => {
+        suite('building website.json manifest', () => {
+            test('is written to build dir', async () => {
+                const project = await createDank()
+                await project.build()
+                const websiteJson = await readFile(
+                    project.path('build/website.json'),
+                    'utf8',
+                )
+                const website = JSON.parse(websiteJson)
+                assert.ok('buildTag' in website)
+                assert.ok('files' in website)
+                assert.ok('pageUrls' in website)
+                assert.ok(website.files.includes('/index.html'))
+                assert.ok(website.pageUrls.includes('/'))
+            })
+        })
         test('rewriting hrefs', async () => {
             const project = await createDank()
             await project.build()
@@ -105,6 +105,17 @@ suite('building pages', () => {
                     /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
                 ),
                 `css link not found in ${project.path('build', 'dist', 'subdir', 'index.html')}`,
+            )
+        })
+
+        test('copying public assets to build/dist', async () => {
+            const project = await createDank()
+            await project.build()
+            assert.ok(
+                await readTest(
+                    project.path('build', 'dist', '.webmanifest'),
+                    /"name": "Dank 'n Eggs"/,
+                ),
             )
         })
     })

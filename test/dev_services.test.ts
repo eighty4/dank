@@ -7,8 +7,8 @@ const COMMAND = {
     SERVICE: `node -e "import { createServer } from 'node:http';const server = createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'text/plain' });res.end('Hello World!');});server.listen(0, '127.0.0.1', () => {console.log('started');})"`,
 } as const
 
-suite('services.ts', () => {
-    suite('DevServices', () => {
+suite('Dev services', () => {
+    suite('services.ts', () => {
         test('ctor starts a configured process', () => {
             const configured: Array<DevService> = [
                 {

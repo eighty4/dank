@@ -20,7 +20,6 @@ export default defineConfig({
     pages: { '/': './home.html' },
 })`)
             const config = await project.loadConfig()
-            console.log(await config.buildTag())
             assert.ok(/^build-\d{8}$/.test(await config.buildTag()))
         })
 
@@ -34,7 +33,6 @@ export default defineConfig({
     pages: { '/': './home.html' },
 })`)
             const config = await project.loadConfig()
-            console.log(await config.buildTag())
             assert.ok(/^yoda-eats-[\d]{8}$/.test(await config.buildTag()))
         })
     })
