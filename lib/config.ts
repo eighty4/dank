@@ -3,6 +3,7 @@ import { createBuildTag } from './build_tag.ts'
 import type {
     DankConfig,
     DankDetails,
+    DevPageMapping,
     EsbuildConfig,
     PageMapping,
     ServiceWorkerBuilder,
@@ -33,11 +34,15 @@ export type ResolvedDankConfig = {
     get esbuildPort(): number
     get esbuild(): Readonly<Omit<EsbuildConfig, 'port'>> | undefined
     get pages(): Readonly<Record<`/${string}`, PageMapping>>
-    get devPages(): Readonly<DankConfig['devPages']>
+    get devPages(): Readonly<
+        Record<`/${string}`, Omit<DevPageMapping & PageMapping, 'pattern'>>
+    >
     get services(): Readonly<DankConfig['services']>
     get serviceWorkerBuilder(): DankConfig['serviceWorker']
 
     buildTag(): Promise<string>
+
+    pageMappings(): Record<`/${string}`, PageMapping>
 
     reload(): Promise<void>
 }
@@ -77,7 +82,7 @@ class DankConfigInternal implements ResolvedDankConfig {
     #esbuildPort: number = DEFAULT_ESBUILD_PORT
     #esbuild: Readonly<Omit<EsbuildConfig, 'port'>> | undefined
     #pages: Readonly<Record<`/${string}`, PageMapping>> = {}
-    #devPages: Readonly<DankConfig['devPages']>
+    #devPages: Readonly<ResolvedDankConfig['devPages']> = {}
     #services: Readonly<DankConfig['services']>
 
     constructor(
@@ -119,7 +124,7 @@ class DankConfigInternal implements ResolvedDankConfig {
         return this.#pages
     }
 
-    get devPages(): Readonly<DankConfig['devPages']> {
+    get devPages(): Readonly<ResolvedDankConfig['devPages']> {
         return this.#devPages
     }
 
@@ -142,6 +147,17 @@ class DankConfigInternal implements ResolvedDankConfig {
         return this.#buildTag
     }
 
+    pageMappings(): ResolvedDankConfig['pages'] {
+        if (this.#mode === 'serve') {
+            return {
+                ...this.#pages,
+                ...this.#devPages,
+            }
+        } else {
+            return this.#pages
+        }
+    }
+
     async reload() {
         const userConfig = await resolveConfig(
             this.#modulePath,
@@ -153,7 +169,7 @@ class DankConfigInternal implements ResolvedDankConfig {
         this.#esbuildPort = resolveEsbuildPort(this.#flags, userConfig)
         this.#esbuild = Object.freeze(userConfig.esbuild)
         this.#pages = Object.freeze(normalizePages(userConfig.pages))
-        this.#devPages = Object.freeze(userConfig.devPages)
+        this.#devPages = Object.freeze(normalizeDevPages(userConfig.devPages))
         this.#services = Object.freeze(userConfig.services)
         this.#serviceWorkerBuilder = userConfig.serviceWorker
     }
@@ -432,4 +448,28 @@ function normalizePages(
         result[pageUrl as `/${string}`] = mappedMapping
     }
     return result
+}
+
+function normalizeDevPages(
+    pages: DankConfig['devPages'],
+): Record<string, Omit<DevPageMapping & PageMapping, 'pattern'>> {
+    if (pages) {
+        const result: Record<
+            string,
+            Omit<DevPageMapping & PageMapping, 'pattern'>
+        > = {}
+        for (const [url, mapping] of Object.entries(pages)) {
+            if (typeof mapping === 'string') {
+                result[url] = {
+                    label: '',
+                    webpage: mapping,
+                }
+            } else {
+                result[url] = mapping
+            }
+        }
+        return result
+    } else {
+        return {}
+    }
 }

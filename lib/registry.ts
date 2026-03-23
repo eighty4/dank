@@ -231,11 +231,10 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
     }
 
     #configDiff() {
-        const updatePages: ResolvedDankConfig['pages'] = this.#c.devPages
-            ? { ...this.#c.pages, ...this.#c.devPages }
-            : { ...this.#c.pages }
         const prevPages = new Set(Object.keys(this.#pages))
-        for (const [urlPath, mapping] of Object.entries(updatePages)) {
+        for (const [urlPath, mapping] of Object.entries(
+            this.#c.pageMappings(),
+        )) {
             const existingPage = prevPages.delete(urlPath as `/${string}`)
             if (existingPage) {
                 this.#configPageUpdate(urlPath as `/${string}`, mapping)
