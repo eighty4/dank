@@ -60,34 +60,75 @@ export class Resolver {
         return join(this.#dirs.projectRootAbs, ...p)
     }
 
-    // `p` is expected to be a relative path resolvable from the project dir
-    isProjectSubpathInPagesDir(p: string): boolean {
-        return resolve(join(this.#dirs.projectRootAbs, p)).startsWith(
+    isPagesSubpathResolvedToPagesDirSubpath(p: string): boolean {
+        return verifySubpathInRoot(this.#dirs.pagesAbs, this.#dirs.pagesAbs, p)
+    }
+
+    isPagesSubpathResolvedToProjectDirSubpath(p: string): boolean {
+        return verifySubpathInRoot(
             this.#dirs.pagesAbs,
+            this.#dirs.projectRootAbs,
+            p,
         )
     }
 
-    // `p` is expected to be a relative path resolvable from the pages dir
-    isPagesSubpathInPagesDir(p: string): boolean {
-        return this.isProjectSubpathInPagesDir(join(this.#dirs.pages, p))
+    isProjectSubpathResolvedToPagesDirSubpath(p: string): boolean {
+        return verifySubpathInRoot(
+            this.#dirs.projectRootAbs,
+            this.#dirs.pagesAbs,
+            p,
+        )
+    }
+
+    isProjectSubpathResolvedToProjectDirSubpath(p: string): boolean {
+        return verifySubpathInRoot(
+            this.#dirs.projectRootAbs,
+            this.#dirs.projectRootAbs,
+            p,
+        )
     }
 
     projectPathFromAbsolute(p: string) {
         return p.replace(this.#dirs.projectRootAbs, '').substring(1)
     }
 
-    // resolve a pages subpath from a resource within the pages directory by a relative href
     // `from` is expected to be a pages resource fs path starting with `pages/` and ending with filename
-    // the result will be a pages subpath and will not have the pages dir prefix
-    // returns 'outofbounds' if the relative path does not resolve to a file within the pages dir
-    resolveHrefInPagesDir(from: string, href: string): string | ResolveError {
+    // `href` is a source relative path to another source used by a script src, link href or Worker ctor URL
+    // returns 'outofbounds' if the resolved path is not in the pages directory
+    resolvePagesRelativeHrefInPagesDir(
+        from: string,
+        href: string,
+    ): string | ResolveError {
         const p = join(dirname(from), href)
-        if (this.isProjectSubpathInPagesDir(p)) {
+        if (this.isProjectSubpathResolvedToPagesDirSubpath(p)) {
             return p
         } else {
             return 'outofbounds'
         }
     }
+
+    // `from` is expected to be a pages resource fs path starting with `pages/` and ending with filename
+    // `href` is a source relative path to another source used by a script src, link href or Worker ctor URL
+    // returns 'outofbounds' if the resolved path is not in the project directory
+    resolvePagesRelativeHrefInProjectDir(
+        from: string,
+        href: string,
+    ): string | ResolveError {
+        const p = join(dirname(from), href)
+        if (this.isProjectSubpathResolvedToProjectDirSubpath(p)) {
+            return p
+        } else {
+            return 'outofbounds'
+        }
+    }
+}
+
+function verifySubpathInRoot(
+    resolveFrom: string,
+    expectWithin: string,
+    testSubpath: string,
+): boolean {
+    return resolve(join(resolveFrom, testSubpath)).startsWith(expectWithin)
 }
 
 class WindowsResolver extends Resolver {
@@ -99,7 +140,21 @@ class WindowsResolver extends Resolver {
         return super.projectPathFromAbsolute(p).replaceAll('\\', '/')
     }
 
-    resolveHrefInPagesDir(from: string, href: string): string | ResolveError {
-        return super.resolveHrefInPagesDir(from, href).replaceAll('\\', '/')
+    resolvePagesRelativeHrefInPagesDir(
+        from: string,
+        href: string,
+    ): string | ResolveError {
+        return super
+            .resolvePagesRelativeHrefInPagesDir(from, href)
+            .replaceAll('\\', '/')
+    }
+
+    resolvePagesRelativeHrefInProjectDir(
+        from: string,
+        href: string,
+    ): string | ResolveError {
+        return super
+            .resolvePagesRelativeHrefInProjectDir(from, href)
+            .replaceAll('\\', '/')
     }
 }

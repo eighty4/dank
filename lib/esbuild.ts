@@ -156,10 +156,11 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                         1,
                         workerCtorMatch.groups!.url.length - 1,
                     )
-                    const workerEntryPoint = r.resolver.resolveHrefInPagesDir(
-                        clientScript,
-                        workerUrl,
-                    )
+                    const workerEntryPoint =
+                        r.resolver.resolvePagesRelativeHrefInProjectDir(
+                            clientScript,
+                            workerUrl,
+                        )
                     if (workerEntryPoint === 'outofbounds') {
                         if (!errors) errors = []
                         errors.push(
@@ -256,7 +257,7 @@ function outofboundsWorkerUrlCtorArg(
 ): PartialMessage {
     return {
         id: 'worker-url-outofbounds',
-        text: `The ${workerCtorMatch.groups!.ctor} constructor URL arg \`${workerCtorMatch.groups!.url}\` cannot resolve to a path outside of the pages directory`,
+        text: `The ${workerCtorMatch.groups!.ctor} constructor URL arg \`${workerCtorMatch.groups!.url}\` cannot resolve to a path outside of the project directory`,
         location,
     }
 }

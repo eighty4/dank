@@ -5,15 +5,17 @@ import { testDir } from './dank_project_testing.ts'
 
 suite('dirs.ts', () => {
     suite('Resolver', () => {
-        suite('isPagesSubpathInPagesDir', () => {
+        suite('isPagesSubpathResolvedToPagesDirSubpath', () => {
             test('resolves whether path is pages subdir', async () => {
                 const { resolver } = await testDir()
                 assert.equal(
-                    resolver.isPagesSubpathInPagesDir('./profile/Profile.html'),
+                    resolver.isPagesSubpathResolvedToPagesDirSubpath(
+                        './profile/Profile.html',
+                    ),
                     true,
                 )
                 assert.equal(
-                    resolver.isPagesSubpathInPagesDir(
+                    resolver.isPagesSubpathResolvedToPagesDirSubpath(
                         '../profile/Profile.html',
                     ),
                     false,
@@ -22,29 +24,79 @@ suite('dirs.ts', () => {
             test('resolves whether path is pages subdir', async () => {
                 const { resolver } = await testDir()
                 assert.equal(
-                    resolver.isProjectSubpathInPagesDir(
+                    resolver.isPagesSubpathResolvedToPagesDirSubpath(
                         '/pages/profile/Profile.html',
                     ),
                     true,
                 )
             })
-            test('resolves to the same results regardless of posix or windows paths', async () => {
+        })
+        suite('isPagesSubpathResolvedToProjectDirSubpath', () => {
+            test('resolves whether path is project subdir', async () => {
                 const { resolver } = await testDir()
                 assert.equal(
-                    resolver.isPagesSubpathInPagesDir(
-                        '\\pages\\profile\\Profile.html',
+                    resolver.isPagesSubpathResolvedToProjectDirSubpath(
+                        './profile/Profile.html',
                     ),
-                    resolver.isPagesSubpathInPagesDir(
-                        '/pages/profile/Profile.html',
-                    ),
+                    true,
                 )
                 assert.equal(
-                    resolver.isPagesSubpathInPagesDir(
-                        '\\pages\\profile\\Profile.html',
+                    resolver.isPagesSubpathResolvedToProjectDirSubpath(
+                        '../profile/Profile.html',
                     ),
-                    resolver.isPagesSubpathInPagesDir(
-                        '/pages/profile/Profile.html',
+                    true,
+                )
+                assert.equal(
+                    resolver.isPagesSubpathResolvedToProjectDirSubpath(
+                        '../../profile/Profile.html',
                     ),
+                    false,
+                )
+            })
+        })
+        suite('isProjectSubpathResolvedToPagesDirSubpath', () => {
+            test('resolves whether path is project subdir', async () => {
+                const { resolver } = await testDir()
+                assert.equal(
+                    resolver.isProjectSubpathResolvedToPagesDirSubpath(
+                        './pages/profile/Profile.html',
+                    ),
+                    true,
+                )
+                assert.equal(
+                    resolver.isProjectSubpathResolvedToPagesDirSubpath(
+                        './profile/Profile.html',
+                    ),
+                    false,
+                )
+                assert.equal(
+                    resolver.isProjectSubpathResolvedToPagesDirSubpath(
+                        '../profile/Profile.html',
+                    ),
+                    false,
+                )
+            })
+        })
+        suite('isProjectSubpathResolvedToProjectDirSubpath', () => {
+            test('resolves whether path is project subdir', async () => {
+                const { resolver } = await testDir()
+                assert.equal(
+                    resolver.isProjectSubpathResolvedToProjectDirSubpath(
+                        './pages/profile/Profile.html',
+                    ),
+                    true,
+                )
+                assert.equal(
+                    resolver.isProjectSubpathResolvedToProjectDirSubpath(
+                        './profile/Profile.html',
+                    ),
+                    true,
+                )
+                assert.equal(
+                    resolver.isProjectSubpathResolvedToProjectDirSubpath(
+                        '../profile/Profile.html',
+                    ),
+                    false,
                 )
             })
         })

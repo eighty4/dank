@@ -9,6 +9,11 @@
   placeholders like `{{date}}-{{gitHash}}` to inject build metadata
 - Builds and CICD verify Linux, MacOS and Windows compat
 
+### Changed
+
+- Worker constructor URLs are no longer limited to the pages directory
+  and can now resolve to any path within the project directory
+
 ### Fixed
 
 - Windows paths support

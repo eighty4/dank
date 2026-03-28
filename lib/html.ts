@@ -237,7 +237,11 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
                     )
                     return false
                 }
-                if (!this.#resolver.isPagesSubpathInPagesDir(p.fsPath)) {
+                if (
+                    !this.#resolver.isPagesSubpathResolvedToPagesDirSubpath(
+                        p.fsPath,
+                    )
+                ) {
                     this.#error(
                         `partials cannot be referenced from outside the pages dir like \`${p.specifier}\` in webpage \`${join(this.#c.dirs.pages, this.#fsPath)}\``,
                     )
@@ -395,7 +399,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         elem: Element,
     ): ImportedScript {
         const inPath = join(this.#c.dirs.pages, dirname(this.#fsPath), href)
-        if (!this.#resolver.isProjectSubpathInPagesDir(inPath)) {
+        if (!this.#resolver.isPagesSubpathResolvedToPagesDirSubpath(inPath)) {
             throw new DankError(
                 `href \`${href}\` in webpage \`${join(this.#c.dirs.pages, this.#fsPath)}\` cannot reference sources outside of the pages directory`,
             )
