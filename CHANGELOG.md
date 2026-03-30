@@ -7,6 +7,9 @@
 - `dank.config.ts` supports a `buildTag` string expression or builder
   function to customize the website's build tag using expression
   placeholders like `{{date}}-{{gitHash}}` to inject build metadata
+- `dank.config.ts` can now configure a callback for a completed
+  build by configuring `afterBuild` which will be called with
+  `AfterBuildArgs` that includes `WebsiteManifest`
 - Builds and CICD verify Linux, MacOS and Windows compat
 
 ### Changed

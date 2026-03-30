@@ -62,7 +62,19 @@ async function buildWebpages(
             )
         }),
     )
+
+    // build service worker
     await buildServiceWorker(registry)
+
+    // invoke afterBuild callback if present
+    if (c.afterBuild) {
+        try {
+            await c.afterBuild({ website: await registry.manifest() })
+        } catch (e) {
+            throw Error('DANK afterBuild callback threw an error', { cause: e })
+        }
+    }
+
     return registry
 }
 

@@ -28,6 +28,8 @@ export type DankConfig = {
     // generate a service worker for `dank build --production`
     // and when previewing with `dank serve --preview`
     serviceWorker?: ServiceWorkerBuilder
+
+    afterBuild?: AfterBuild
 }
 
 export type BuildTagParams = {
@@ -133,3 +135,9 @@ export {
     createServiceWorker,
     type ServiceWorkerCaching,
 } from './service_worker.ts'
+
+export type AfterBuildArgs = {
+    website: WebsiteManifest
+}
+
+export type AfterBuild = (args: AfterBuildArgs) => Promise<void> | void

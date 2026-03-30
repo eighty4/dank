@@ -39,6 +39,7 @@ export type ResolvedDankConfig = {
     >
     get services(): Readonly<DankConfig['services']>
     get serviceWorkerBuilder(): DankConfig['serviceWorker']
+    get afterBuild(): DankConfig['afterBuild']
 
     buildTag(): Promise<string>
 
@@ -77,6 +78,7 @@ class DankConfigInternal implements ResolvedDankConfig {
     #mode: 'build' | 'serve'
     #modulePath: string
     #serviceWorkerBuilder?: ServiceWorkerBuilder
+    #afterBuild: DankConfig['afterBuild']
 
     #dankPort: number = DEFAULT_DEV_PORT
     #esbuildPort: number = DEFAULT_ESBUILD_PORT
@@ -136,6 +138,10 @@ class DankConfigInternal implements ResolvedDankConfig {
         return this.#serviceWorkerBuilder
     }
 
+    get afterBuild(): DankConfig['afterBuild'] {
+        return this.#afterBuild
+    }
+
     buildTag(): Promise<string> {
         if (this.#buildTag === null) {
             this.#buildTag = createBuildTag(
@@ -172,6 +178,7 @@ class DankConfigInternal implements ResolvedDankConfig {
         this.#devPages = Object.freeze(normalizeDevPages(userConfig.devPages))
         this.#services = Object.freeze(userConfig.services)
         this.#serviceWorkerBuilder = userConfig.serviceWorker
+        this.#afterBuild = userConfig.afterBuild
     }
 }
 
@@ -221,6 +228,7 @@ function validateDankConfig(c: Partial<DankConfig>) {
         validateDevServices(c.services)
         validateEsbuildConfig(c.esbuild)
         validateServiceWorker(c.serviceWorker)
+        validateAfterBuild(c.afterBuild)
     } catch (e: any) {
         LOG({
             realm: 'config',
@@ -431,6 +439,15 @@ function validateDevServices(services: DankConfig['services']) {
                 )
             }
         }
+    }
+}
+
+function validateAfterBuild(afterBuild: DankConfig['afterBuild']) {
+    if (!afterBuild) {
+        return
+    }
+    if (typeof afterBuild !== 'function') {
+        throw Error(`DankConfig.afterBuild must be a function`)
     }
 }
 

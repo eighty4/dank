@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile, rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import { suite, test } from 'node:test'
 import {
     createDank,
@@ -141,6 +142,51 @@ suite('`dank build`', () => {
                 await project.build()
                 assert.fail('build should have failed')
             } catch (e) {}
+        })
+    })
+
+    suite('configuring afterBuild hook', () => {
+        test('invokes function when configured', async () => {
+            const project = await createDank()
+            await project.writeConfig(`\
+import { writeFileSync } from 'node:fs'
+export default {
+    pages: { '/': './dank.html' },
+    afterBuild: ({website}) => {
+        writeFileSync('js.txt', website.files.filter(f => f.includes('js')).join(', '))
+    }
+}
+`)
+            await project.build()
+            assert.ok(await readFile(join(project.dir, 'js.txt'), 'utf8'))
+        })
+
+        test('works if null', async () => {
+            const project = await createDank()
+            await project.writeConfig(`\
+import { writeFileSync } from 'node:fs'
+export default {
+    pages: { '/': './dank.html' },
+    afterBuild: null,
+}
+`)
+            await project.build()
+        })
+
+        test('awaits async function', async () => {
+            const project = await createDank()
+            await project.writeConfig(`\
+import { writeFile } from 'node:fs/promises'
+export default {
+    pages: { '/': './dank.html' },
+    afterBuild: async ({website}) => {
+        await new Promise(res => setTimeout(res, 500))
+        await writeFile('js.txt', website.files.filter(f => f.includes('js')).join(', '))
+    }
+}
+`)
+            await project.build()
+            assert.ok(await readFile(join(project.dir, 'js.txt'), 'utf8'))
         })
     })
 })
