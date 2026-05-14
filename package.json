@@ -32,7 +32,7 @@
         "build:client": "node scripts/build_client.ts",
         "build:lib": "tsc && tsc -p tsconfig.exports.json && tsc -p tsconfig.sw.json",
         "build:release": "pnpm build && node scripts/prepare_release.ts",
-        "fmt": "prettier --write .",
+        "fmt": "prettier --write . --log-level warn",
         "fmtcheck": "prettier --check .",
         "test": "node --test \"test/**/*.test.ts\"",
         "test:rebuild": "pnpm build && pnpm test",
