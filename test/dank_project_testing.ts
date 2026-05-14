@@ -6,12 +6,13 @@ import {
 } from 'node:child_process'
 import EventEmitter from 'node:events'
 import {
-    readdir,
-    readFile,
     mkdir,
     mkdtemp,
-    writeFile,
+    readdir,
+    readFile,
     realpath,
+    rm,
+    writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, join } from 'node:path'
@@ -31,7 +32,7 @@ const DANK_BIN_PATH = join(import.meta.dirname, '../lib/bin.ts')
 
 export type DankProjectScaffolding = {
     // files to write to project dir from project root
-    files?: Record<string, DankCreated | string>
+    files?: Record<string, DankCreated | string | null>
     // html files to declare in `dank.config.ts`
     pages?: Record<`/${string}`, `./${string}.html`>
 }
@@ -129,11 +130,13 @@ async function writeScaffoldingFiles(
 async function writeScaffoldingFile(
     dir: string,
     path: string,
-    content: DankCreated | string,
+    content: DankCreated | string | null,
 ) {
     const filepath = join(dir, path)
     await mkdir(dirname(filepath), { recursive: true })
-    if (typeof content === 'string') {
+    if (content === null) {
+        await rm(filepath, { force: true })
+    } else if (typeof content === 'string') {
         await writeFile(filepath, content)
     } else {
         await writeFile(filepath, await content.result(dir))
@@ -198,14 +201,14 @@ class DankTestProject {
 
     // reads a build/dist output with a content hash by doing a readdir
     // and matching filename before content hash
-    async readBundleOutputFromBuild(entrypoint: string) {
+    async readBundleOutputFromBuild(entrypoint: string): Promise<string> {
         if (entrypoint.startsWith('pages')) {
             entrypoint = entrypoint.substring(6)
         }
         const ext = extname(entrypoint) === 'css' ? 'css' : 'js'
         const filename = basename(entrypoint)
         const dir = this.path('build/dist', dirname(entrypoint))
-        const files = await readdir(dir)
+        const files: Array<string> = await readdir(dir)
         const regex = new RegExp(
             `${filename.substring(0, filename.indexOf('.'))}-[A-Z\\d]{8}\\.${ext}$`,
         )
