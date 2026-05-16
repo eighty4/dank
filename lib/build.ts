@@ -108,7 +108,9 @@ export async function rewriteWorkerUrls(
         rewriteChains[registry.mappedHref(w.dependentEntryPoint)].push(s =>
             s.replace(
                 createWorkerRegex(w.workerCtor, w.workerUrlPlaceholder),
-                `new ${w.workerCtor}('${registry.mappedHref(w.workerEntryPoint)}')`,
+                match =>
+                    `new ${w.workerCtor}('${registry.mappedHref(w.workerEntryPoint)}'` +
+                    match.at(-1),
             ),
         )
     }
@@ -136,7 +138,7 @@ export function createWorkerRegex(
     workerUrl: string,
 ): RegExp {
     return new RegExp(
-        `new(?:\\s|\\r?\\n)+${workerCtor}(?:\\s|\\r?\\n)*\\((?:\\s|\\r?\\n)*['"]${workerUrl}['"](?:\\s|\\r?\\n)*\\)`,
+        `new(?:\\s|\\r?\\n)+${workerCtor}(?:\\s|\\r?\\n)*\\((?:\\s|\\r?\\n)*['"]${workerUrl}['"](?:\\s|\\r?\\n)*[,\\)]`,
         'g',
     )
 }

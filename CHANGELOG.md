@@ -23,6 +23,8 @@
 - Dev services are launched and cleaned up correctly on Windows
 - Dev pages configured with `dank.config.ts` `devPages` option work with
   both a string webpage mapping and a `DevPageMapping` configuration
+- Worker constructors with second arg options breaking swap of build output
+  hashed worker URL
 
 ## [v0.0.4] - 2026-02-04
 

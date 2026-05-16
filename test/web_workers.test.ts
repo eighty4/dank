@@ -15,31 +15,68 @@ import {
 
 suite('Web workers', () => {
     suite('`dank build`', () => {
-        test('rewriting worker url with build hash', async () => {
-            for (const ctor of ['Worker', 'SharedWorker']) {
-                const project = await createDank({
-                    files: {
-                        'pages/dank.ts': `\
-                            const w = new ${ctor}('./computational-wizardry.ts')
-                            w.onerror = console.error`,
-                        'pages/computational-wizardry.ts': '',
-                    },
-                })
-                await project.build()
-                const output =
-                    await project.readBundleOutputFromBuild('dank.ts')
-                const pattern = new RegExp(
-                    `new ${ctor}\\('\\/computational-wizardry-[A-Z\\d]{8}\\.js'\\)`,
-                    'g',
-                )
-                assert.ok(pattern.test(output))
-                assert.equal(
-                    await project.readBundleOutputFromBuild(
-                        'computational-wizardry.ts',
-                    ),
-                    '',
-                )
-            }
+        suite('rewriting worker url with build hash', () => {
+            test('with path ctor arg only', async () => {
+                for (const ctor of ['Worker', 'SharedWorker']) {
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `\
+                                const w = new ${ctor}('./computational-wizardry.ts')
+                                w.onerror = console.error`,
+                            'pages/computational-wizardry.ts': '',
+                        },
+                    })
+                    await project.build()
+                    const output =
+                        await project.readBundleOutputFromBuild('dank.ts')
+                    const pattern = new RegExp(
+                        `new ${ctor}\\('\\/computational-wizardry-[A-Z\\d]{8}\\.js'\\)`,
+                        'g',
+                    )
+                    assert.ok(
+                        pattern.test(output),
+                        'did not find built worker href',
+                    )
+                    assert.equal(
+                        await project.readBundleOutputFromBuild(
+                            'computational-wizardry.ts',
+                        ),
+                        '',
+                    )
+                }
+            })
+
+            test('with path & opts ctor args', async () => {
+                for (const ctor of ['Worker', 'SharedWorker']) {
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `\
+                                const w = new ${ctor}('./computational-wizardry.ts', {
+                                    name: 'fancy calc',
+                                })
+                                w.onerror = console.error`,
+                            'pages/computational-wizardry.ts': '',
+                        },
+                    })
+                    await project.build()
+                    const output =
+                        await project.readBundleOutputFromBuild('dank.ts')
+                    const pattern = new RegExp(
+                        `new ${ctor}\\('\\/computational-wizardry-[A-Z\\d]{8}\\.js',`,
+                        'g',
+                    )
+                    assert.ok(
+                        pattern.test(output),
+                        'did not find built worker href',
+                    )
+                    assert.equal(
+                        await project.readBundleOutputFromBuild(
+                            'computational-wizardry.ts',
+                        ),
+                        '',
+                    )
+                }
+            })
         })
     })
     suite('build.lib', () => {
