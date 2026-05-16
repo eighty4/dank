@@ -12,10 +12,11 @@ import {
     readFile,
     realpath,
     rm,
+    stat,
     writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, extname, join } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { waitForEsbuildServe } from './esbuild_events_testing.ts'
 import { getAvailablePort, waitForPort } from './ports.ts'
 import { loadConfig, type ResolvedDankConfig } from '../lib/config.ts'
@@ -189,6 +190,28 @@ class DankTestProject {
 
     async build(): Promise<void> {
         await dankBuild(this.#dir)
+    }
+
+    async debugPrintBuildDist(): Promise<void> {
+        const ls = async (p: string, pad: number = 2) => {
+            if (!isAbsolute(p)) throw Error()
+            for (const f of await readdir(p)) {
+                console.log(`${' '.repeat(pad)}${f}`)
+                const nextP = join(p, f)
+                const s = await stat(nextP)
+                if (s.isDirectory()) {
+                    await ls(nextP, pad + 2)
+                }
+            }
+        }
+        const p = this.path('build/dist')
+        console.log('~~~~~DEBUG PRINT~~~~~')
+        console.log(p)
+        console.log()
+        await ls(p)
+        console.log()
+        console.log('~~~~~~~~~~~~~~~~~~~~~')
+        console.log()
     }
 
     path(...p: Array<string>): string {
