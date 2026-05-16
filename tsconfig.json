@@ -2,19 +2,16 @@
     "compilerOptions": {
         "outDir": "lib_js",
         "rootDir": "lib",
-
         "lib": ["ESNext"],
         "target": "ESNext",
         "module": "NodeNext",
+        "types": ["node"],
         "composite": false,
         "declaration": false,
-        "forceConsistentCasingInFileNames": true,
-        "skipLibCheck": true,
-
         "allowImportingTsExtensions": true,
         "rewriteRelativeImportExtensions": true,
-
-        /* Linting */
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
         "noFallthroughCasesInSwitch": true,
         "noUnusedLocals": true,
         "noUnusedParameters": true,

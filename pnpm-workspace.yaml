@@ -1,3 +1,6 @@
 packages:
   - ./
   - ./create-dank
+
+allowBuilds:
+  esbuild: true

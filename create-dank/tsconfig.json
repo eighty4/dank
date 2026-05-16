@@ -4,16 +4,13 @@
         "rootDir": "./",
         "composite": false,
         "declaration": false,
-
-        "target": "ESNext",
-        "module": "NodeNext",
+        "target": "esnext",
+        "module": "esnext",
+        "types": ["node"],
         "forceConsistentCasingInFileNames": true,
         "skipLibCheck": true,
-
         "allowImportingTsExtensions": true,
         "rewriteRelativeImportExtensions": true,
-
-        /* Linting */
         "noFallthroughCasesInSwitch": true,
         "noUnusedLocals": true,
         "noUnusedParameters": true,
