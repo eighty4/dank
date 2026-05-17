@@ -16,6 +16,7 @@
 
 - Worker constructor URLs are no longer limited to the pages directory
   and can now resolve to any path within the project directory
+- Built workers are now deployed to `.lib` directory of `build/dist`
 
 ### Fixed
 
