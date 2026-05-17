@@ -1,32 +1,33 @@
 import { readFile } from 'node:fs/promises'
-// import { sep as windowsSep } from 'node:path/win32'
-// import { sep as posixSep } from 'node:path/posix'
 import esbuild, {
     type BuildContext,
     type BuildOptions,
     type BuildResult,
     type Location,
+    type Metafile,
     type OnLoadArgs,
     type PartialMessage,
     type Plugin,
     type PluginBuild,
 } from 'esbuild'
 import type { DefineDankGlobal } from './define.ts'
-import type { BuildRegistry, WebsiteRegistry } from './registry.ts'
+import type { WebsiteRegistry, WorkerBuildRegistry } from './registry.ts'
 
-export type EntryPoint = { in: string; out: string }
+export type EsbuildEntrypoint = { in: string; out: string }
 
 export async function esbuildDevContext(
     r: WebsiteRegistry,
     define: DefineDankGlobal,
-    entryPoints: Array<EntryPoint>,
+    entryPoints: Array<EsbuildEntrypoint>,
 ): Promise<BuildContext> {
+    const wr = r.workerRegistry()
     return await esbuild.context({
         define,
         entryNames: '[dir]/[name]',
         entryPoints: mapEntryPointPaths(entryPoints),
         outdir: r.config.dirs.buildWatch,
         ...commonBuildOptions(r),
+        plugins: esbuildPlugins(r, wr, true),
         splitting: false,
         write: false,
     })
@@ -35,45 +36,45 @@ export async function esbuildDevContext(
 export async function esbuildWebpages(
     r: WebsiteRegistry,
     define: DefineDankGlobal,
-    entryPoints: Array<EntryPoint>,
+    entryPoints: Array<EsbuildEntrypoint>,
 ): Promise<void> {
-    try {
-        await esbuild.build({
-            define,
-            entryNames: '[dir]/[name]-[hash]',
-            entryPoints: mapEntryPointPaths(entryPoints),
-            outdir: r.config.dirs.buildDist,
-            ...commonBuildOptions(r),
-        })
-    } catch (ignore) {
-        process.exit(1)
-    }
+    const wr = r.workerRegistry()
+    const { metafile } = await esbuild.build({
+        define,
+        entryNames: '[dir]/[name]-[hash]',
+        entryPoints: mapEntryPointPaths(entryPoints),
+        outdir: r.config.dirs.buildDist,
+        ...commonBuildOptions(r),
+        plugins: esbuildPlugins(r, wr),
+    })
+    r.mergeBuiltBundles(metafile)
+    r.mergeWorkerRegistry(metafile, wr)
 }
 
 export async function esbuildWorkers(
     r: WebsiteRegistry,
     define: DefineDankGlobal,
-    entryPoints: Array<EntryPoint>,
+    entryPoints: Array<EsbuildEntrypoint>,
 ): Promise<void> {
-    try {
-        await esbuild.build({
-            define,
-            entryNames: '[dir]/[name]-[hash]',
-            entryPoints: mapEntryPointPaths(entryPoints),
-            outdir: r.config.dirs.buildDist,
-            ...commonBuildOptions(r),
-            splitting: false,
-            metafile: true,
-            write: true,
-            assetNames: 'assets/[name]-[hash]',
-        })
-    } catch (ignore) {
-        process.exit(1)
-    }
+    const wr = r.workerRegistry()
+    const { metafile } = await esbuild.build({
+        define,
+        entryNames: '[dir]/[name]-[hash]',
+        entryPoints: mapEntryPointPaths(entryPoints),
+        outdir: r.config.dirs.buildDist,
+        ...commonBuildOptions(r),
+        plugins: esbuildPlugins(r, wr),
+        splitting: false,
+        metafile: true,
+        write: true,
+        assetNames: 'assets/[name]-[hash]',
+    })
+    r.mergeBuiltBundles(metafile)
 }
 
-function commonBuildOptions(r: WebsiteRegistry): BuildOptions {
-    const p = workersPlugin(r.buildRegistry())
+function commonBuildOptions(
+    r: WebsiteRegistry,
+): BuildOptions & { metafile: true } {
     return {
         absWorkingDir: r.config.dirs.projectRootAbs,
         assetNames: 'assets/[name]-[hash]',
@@ -83,9 +84,6 @@ function commonBuildOptions(r: WebsiteRegistry): BuildOptions {
         metafile: true,
         minify: r.config.flags.minify,
         platform: 'browser',
-        plugins: r.config.esbuild?.plugins?.length
-            ? [p, ...r.config.esbuild?.plugins]
-            : [p],
         splitting: true,
         treeShaking: true,
         write: true,
@@ -99,10 +97,23 @@ function defaultLoaders(): BuildOptions['loader'] {
     }
 }
 
+function esbuildPlugins(
+    r: WebsiteRegistry,
+    wr: WorkerBuildRegistry,
+    devCtx: boolean = false,
+): NonNullable<BuildOptions['plugins']> {
+    const p = devCtx
+        ? workersPlugin(wr, (build, wr) => r.mergeDevContext(build, wr))
+        : workersPlugin(wr)
+    return r.config.esbuild?.plugins?.length
+        ? [p, ...r.config.esbuild?.plugins]
+        : [p]
+}
+
 // esbuild will append the .js or .css to output filenames
 // keeping extension on entryPoints data for consistency
 // and only trimming when creating esbuild opts
-function mapEntryPointPaths(entryPoints: Array<EntryPoint>) {
+function mapEntryPointPaths(entryPoints: Array<EsbuildEntrypoint>) {
     return entryPoints.map(entryPoint => {
         return {
             in: entryPoint.in,
@@ -115,7 +126,10 @@ const WORKER_CTOR_REGEX =
     /new(?:\s|\r?\n)+(?<ctor>(?:Shared)?Worker)(?:\s|\r?\n)*\((?:\s|\r?\n)*(?<url>.*?)(?:\s|\r?\n)*(?<end>[\),])/g
 const WORKER_URL_REGEX = /^('.*'|".*")$/
 
-export function workersPlugin(r: BuildRegistry): Plugin {
+export function workersPlugin(
+    wr: WorkerBuildRegistry,
+    mergeDevCtx?: (build: Metafile, wr: WorkerBuildRegistry) => void,
+): Plugin {
     return {
         name: '@eighty4/dank/esbuild/workers',
         setup(build: PluginBuild) {
@@ -148,20 +162,21 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                         continue
                     }
                     if (!clientScript) {
-                        clientScript = r.resolver.projectPathFromAbsolute(
+                        clientScript = wr.resolver.projectPathFromAbsolute(
                             args.path,
                         )
                     }
-                    const workerUrl = workerCtorMatch.groups!.url.substring(
-                        1,
-                        workerCtorMatch.groups!.url.length - 1,
-                    )
-                    const workerEntryPoint =
-                        r.resolver.resolvePagesRelativeHrefInProjectDir(
-                            clientScript,
-                            workerUrl,
+                    const originalCtorSrc =
+                        workerCtorMatch.groups!.url.substring(
+                            1,
+                            workerCtorMatch.groups!.url.length - 1,
                         )
-                    if (workerEntryPoint === 'outofbounds') {
+                    const workerProjectPath =
+                        wr.resolver.resolvePagesRelativeHrefInProjectDir(
+                            clientScript,
+                            originalCtorSrc,
+                        )
+                    if (workerProjectPath === 'outofbounds') {
                         if (!errors) errors = []
                         errors.push(
                             outofboundsWorkerUrlCtorArg(
@@ -175,14 +190,19 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                         )
                         continue
                     }
-                    const workerCtor = workerCtorMatch.groups!.ctor as
+                    const ctor = workerCtorMatch.groups!.ctor as
                         | 'Worker'
                         | 'SharedWorker'
-                    const workerUrlPlaceholder = workerEntryPoint
-                        .replace(/^pages/, '')
-                        .replace(/\.(t|m?j)s$/, '.js')
-                        .replaceAll('\\', '/')
-                    const workerCtorReplacement = `new ${workerCtor}('${workerUrlPlaceholder}'${workerCtorMatch.groups!.end}`
+                    const entrypoint: EsbuildEntrypoint = {
+                        in: workerProjectPath,
+                        out:
+                            '.lib/' +
+                            workerProjectPath
+                                .replace(/\.(t|m?j)s$/, '.js')
+                                .replaceAll('\\', '/'),
+                    }
+                    const placeholderCtorSrc: `/${string}` = `/${entrypoint.out}`
+                    const workerCtorReplacement = `new ${ctor}('${placeholderCtorSrc}'${workerCtorMatch.groups!.end}`
                     contents =
                         contents.substring(0, workerCtorMatch.index + offset) +
                         workerCtorReplacement +
@@ -193,23 +213,26 @@ export function workersPlugin(r: BuildRegistry): Plugin {
                         )
                     offset +=
                         workerCtorReplacement.length - workerCtorMatch[0].length
-                    r.addWorker({
+                    wr.addWorker({
                         clientScript,
-                        workerEntryPoint,
-                        workerCtor,
-                        workerUrl,
-                        workerUrlPlaceholder,
+                        entrypoint,
+                        ctor,
+                        placeholderCtorSrc,
+                        originalCtorSrc,
                     })
                 }
                 const loader = args.path.endsWith('ts') ? 'ts' : 'js'
                 return { contents, errors, loader }
             })
 
-            build.onEnd((result: BuildResult<{ metafile: true }>) => {
-                if (result.metafile) {
-                    r.completeBuild(result)
-                }
-            })
+            // only use build.onEnd when building with `esbuild.context` because
+            // error reporting and stack traces are moot with esbuild's js/go native bridge and EventEmitter
+            // events triggered from merging build state get processed within that bermuda triangle
+            if (mergeDevCtx) {
+                build.onEnd((result: BuildResult<{ metafile: true }>) => {
+                    mergeDevCtx(result.metafile, wr)
+                })
+            }
         },
     }
 }

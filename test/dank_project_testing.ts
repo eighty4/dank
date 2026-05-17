@@ -190,6 +190,9 @@ class DankTestProject {
 
     async build(): Promise<void> {
         await dankBuild(this.#dir)
+        if (DEBUG) {
+            await this.debugPrintBuildDist()
+        }
     }
 
     async debugPrintBuildDist(): Promise<void> {
@@ -216,6 +219,23 @@ class DankTestProject {
 
     path(...p: Array<string>): string {
         return join(this.#dir, ...p)
+    }
+
+    async assertDistExists(path: string) {
+        // todo readBundleOutputFromBuild variant with stat instead of reading content
+        try {
+            await this.readBundleOutputFromBuild(path)
+        } catch (e) {
+            assert.fail()
+        }
+    }
+
+    async assertDistContent(
+        path: string,
+        pattern: RegExp | string | ((text: string) => Promise<void> | void),
+    ) {
+        const text = await this.readBundleOutputFromBuild(path)
+        await assertContent(path, text, pattern)
     }
 
     async readFromBuild(path: string): Promise<string> {
@@ -270,6 +290,26 @@ class DankTestProject {
 
     async servePreview(): Promise<DankServing> {
         return await this.serve(true)
+    }
+}
+
+async function assertContent(
+    path: string,
+    text: string,
+    pattern: RegExp | string | ((text: string) => Promise<void> | void),
+) {
+    if (typeof pattern === 'function') {
+        await pattern(text)
+    } else if (typeof pattern === 'string') {
+        assert.ok(
+            text.includes(pattern),
+            `expected \`${path}\` to include \`${pattern}\`, recvd content:\n\n${text}`,
+        )
+    } else {
+        assert.ok(
+            pattern.test(text),
+            `expected \`${path}\` to match pattern \`${pattern.source}\`, recvd content:\n\n${text}`,
+        )
     }
 }
 
@@ -399,20 +439,7 @@ export class DankServing extends EventEmitter<DankServingEvents> {
     ) {
         await this.assertFetch(path, async r => {
             assert.equal(r.status, 200)
-            const text = await r.text()
-            if (typeof pattern === 'function') {
-                await pattern(text)
-            } else if (typeof pattern === 'string') {
-                assert.ok(
-                    text.includes(pattern),
-                    `expected ${path} to include pattern \`${pattern}\``,
-                )
-            } else {
-                assert.ok(
-                    pattern.test(text),
-                    `expected ${path} to match pattern \`${pattern.source}\``,
-                )
-            }
+            await assertContent(path, await r.text(), pattern)
         })
     }
 

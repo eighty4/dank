@@ -78,7 +78,7 @@ async function buildWebpages(
     return registry
 }
 
-export async function rewriteWorkerUrls(
+async function rewriteWorkerUrls(
     dirs: DankDirectories,
     registry: WebsiteRegistry,
 ) {
@@ -89,6 +89,7 @@ export async function rewriteWorkerUrls(
     const dependentBundlePaths = workers.map(w =>
         registry.mappedHref(w.dependentEntryPoint),
     )
+
     const bundleOutputs: Record<string, string> = {}
 
     // collect all js file contents concurrently
@@ -107,9 +108,9 @@ export async function rewriteWorkerUrls(
     for (const w of workers) {
         rewriteChains[registry.mappedHref(w.dependentEntryPoint)].push(s =>
             s.replace(
-                createWorkerRegex(w.workerCtor, w.workerUrlPlaceholder),
+                createWorkerRegex(w.ctor, w.placeholderCtorSrc),
                 match =>
-                    `new ${w.workerCtor}('${registry.mappedHref(w.workerEntryPoint)}'` +
+                    `new ${w.ctor}('${registry.mappedHref(w.entrypoint.in)}'` +
                     match.at(-1),
             ),
         )

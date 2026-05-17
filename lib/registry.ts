@@ -1,37 +1,23 @@
 import EventEmitter from 'node:events'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path/posix'
-import type { BuildResult } from 'esbuild'
+import type { Metafile } from 'esbuild'
 import type { ResolvedDankConfig } from './config.ts'
 import type { PageMapping, WebsiteManifest } from './dank.ts'
 import { LOG } from './developer.ts'
 import { Resolver, type DankDirectories } from './dirs.ts'
-import type { EntryPoint } from './esbuild.ts'
+import type { EsbuildEntrypoint } from './esbuild.ts'
 import { HtmlEntrypoint } from './html.ts'
 
-// result of an esbuild build from the context of the config's entrypoints
-// path of entrypoint is the reference point to lookup from a dependent page
-export type BuildManifest = {
-    // css and js bundles mapping output path to
-    // entrypoint path or null for code splitting chunks
-    bundles: Record<string, string | null>
-
-    // web worker urls mapped by dependent entrypoints
-    // to be built with a subsequent esbuild context
-    workers: Array<WorkerManifest> | null
-}
-
-type OnBuildComplete = (manifest: BuildManifest) => void
-
-type WorkerManifest = {
+export type WorkerManifest = {
     // path to module dependent on worker
     clientScript: string
+    ctor: 'Worker' | 'SharedWorker'
     // path to bundled entrypoint dependent on `clientScript`
     dependentEntryPoint: string
-    workerEntryPoint: string
-    workerCtor: 'Worker' | 'SharedWorker'
-    workerUrl: string
-    workerUrlPlaceholder: string
+    entrypoint: EsbuildEntrypoint
+    placeholderCtorSrc: `/${string}`
+    originalCtorSrc: string
 }
 
 export type WebsiteRegistryEvents = {
@@ -44,7 +30,7 @@ type WebpageRegistration = {
     pageUrl: `/${string}`
     fsPath: string
     html: HtmlEntrypoint
-    bundles: Array<EntryPoint>
+    bundles: Array<EsbuildEntrypoint>
     urlRewrite?: UrlRewrite
 }
 
@@ -115,8 +101,8 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
             .map(pr => pr.urlRewrite)
     }
 
-    get webpageEntryPoints(): Array<EntryPoint> {
-        const unique: Set<EntryPoint['in']> = new Set()
+    get webpageEntryPoints(): Array<EsbuildEntrypoint> {
+        const unique: Set<EsbuildEntrypoint['in']> = new Set()
         return Object.values(this.#pages)
             .flatMap(p => p.bundles)
             .filter(entryPoint => {
@@ -129,8 +115,8 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
             })
     }
 
-    get webpageAndWorkerEntryPoints(): Array<EntryPoint> {
-        const unique: Set<EntryPoint['in']> = new Set()
+    get webpageAndWorkerEntryPoints(): Array<EsbuildEntrypoint> {
+        const unique: Set<EsbuildEntrypoint['in']> = new Set()
         const pageBundles = Object.values(this.#pages).flatMap(p => p.bundles)
         const workerBundles = this.workerEntryPoints
         const bundles = workerBundles
@@ -146,15 +132,8 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         })
     }
 
-    get workerEntryPoints(): Array<EntryPoint> | null {
-        return (
-            this.#workers?.map(({ workerEntryPoint }) => ({
-                in: workerEntryPoint,
-                out: workerEntryPoint
-                    .replace(/^pages[\//]/, '')
-                    .replace(/\.(mj|t)s$/, '.js'),
-            })) || null
-        )
+    get workerEntryPoints(): Array<EsbuildEntrypoint> | null {
+        return this.#workers?.map(w => w.entrypoint) || null
     }
 
     get workers(): Array<WorkerManifest> | null {
@@ -182,12 +161,8 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         await writeFile(outputPath, content)
     }
 
-    buildRegistry(): BuildRegistry {
-        return new BuildRegistry(
-            this.#c.dirs,
-            this.#resolver,
-            this.#onBuildManifest,
-        )
+    workerRegistry(): WorkerBuildRegistry {
+        return new WorkerBuildRegistry(this.#c.dirs, this.#resolver)
     }
 
     configSync() {
@@ -214,6 +189,55 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
             return found
         } else {
             throw Error(`mapped href for ${lookup} not found`)
+        }
+    }
+
+    mergeDevContext(build: Metafile, workerRegistry: WorkerBuildRegistry) {
+        this.mergeBuiltBundles(build)
+        this.mergeWorkerRegistry(build, workerRegistry)
+    }
+
+    mergeBuiltBundles(build: Metafile): void {
+        for (const [outPath, output] of Object.entries(build.outputs)) {
+            const bundle = outPath.replace(/^build[/\\](dist|watch)/, '')
+            this.#bundles.add(ensurePath(bundle))
+            if (output.entryPoint) {
+                this.#entrypointHrefs[output.entryPoint] = bundle
+            }
+        }
+    }
+
+    mergeWorkerRegistry(build: Metafile, workerRegistry: WorkerBuildRegistry) {
+        const workers = workerRegistry.resolveWorkers(build)
+        // determine if worker entrypoints have changed before merging
+        const updatedWorkerEntrypoints =
+            this.#doesBuildUpdateWorkerEntrypoints(workers)
+        LOG({
+            realm: 'registry',
+            message: 'build completed',
+            data: {
+                updatedWorkerEntrypoints,
+                workers: workers?.length || 0,
+            },
+        })
+        this.#workers = workers
+        if (updatedWorkerEntrypoints) {
+            this.emit('workers')
+        }
+    }
+
+    #doesBuildUpdateWorkerEntrypoints(
+        workers: Array<Omit<WorkerManifest, 'dependentEntryPoint'>> | null,
+    ): boolean {
+        if (this.#workers && workers) {
+            const next = new Set(workers.map(w => w.entrypoint.in))
+            const prev = new Set(this.#workers.map(w => w.entrypoint.in))
+            return (
+                next.size !== prev.size ||
+                next.symmetricDifference(prev).size !== 0
+            )
+        } else {
+            return this.#workers !== null || workers !== null
         }
     }
 
@@ -330,84 +354,20 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         }
     }
 
-    #onBuildManifest: OnBuildComplete = (build: BuildManifest) => {
-        // collect built bundle entrypoint hrefs
-        for (const [outPath, entrypoint] of Object.entries(build.bundles)) {
-            this.#bundles.add(ensurePath(outPath))
-            if (entrypoint) {
-                this.#entrypointHrefs[entrypoint] = outPath
-            }
-        }
-
-        // determine if worker entrypoints have changed
-        let updatedWorkerEntrypoints = false
-        const previousWorkers =
-            this.#workers === null
-                ? null
-                : new Set(this.#workers.map(w => w.workerEntryPoint))
-        if (build.workers) {
-            if (
-                !previousWorkers ||
-                previousWorkers.size !==
-                    new Set(build.workers.map(w => w.workerEntryPoint)).size
-            ) {
-                updatedWorkerEntrypoints = true
-            } else {
-                updatedWorkerEntrypoints = !build.workers.every(w =>
-                    previousWorkers.has(w.workerEntryPoint),
-                )
-            }
-        } else if (previousWorkers) {
-            updatedWorkerEntrypoints = true
-        }
-
-        // merge unique entrypoints from built workers with registry state
-        // todo filtering out unique occurrences of clientScript and workerUrl
-        //  drops reporting/summary/debugging capabilities, but currently
-        //  this.#workers is used for unique worker/client entrypoints
-        if (build.workers) {
-            if (!this.#workers) {
-                this.#workers = build.workers
-            } else {
-                for (const w of build.workers) {
-                    const found = this.#workers.find(w2 => {
-                        return (
-                            w.dependentEntryPoint === w2.dependentEntryPoint &&
-                            w.workerEntryPoint === w2.workerEntryPoint
-                        )
-                    })
-                    if (!found) {
-                        this.#workers.push(w)
-                    }
-                }
-            }
-        }
-
-        if (updatedWorkerEntrypoints) {
-            this.emit('workers')
-        }
-    }
-
-    #setWebpageBundles(url: `/${string}`, bundles: Array<EntryPoint>) {
+    #setWebpageBundles(url: `/${string}`, bundles: Array<EsbuildEntrypoint>) {
         this.#pages[url].bundles = bundles
         this.emit('entrypoints')
     }
 }
 
 // result accumulator of an esbuild `build` or `Context.rebuild`
-export class BuildRegistry {
+export class WorkerBuildRegistry {
     #dirs: DankDirectories
-    #onComplete: OnBuildComplete
     #resolver: Resolver
     #workers: Array<Omit<WorkerManifest, 'dependentEntryPoint'>> | null = null
 
-    constructor(
-        dirs: DankDirectories,
-        resolver: Resolver,
-        onComplete: (manifest: BuildManifest) => void,
-    ) {
+    constructor(dirs: DankDirectories, resolver: Resolver) {
         this.#dirs = dirs
-        this.#onComplete = onComplete
         this.#resolver = resolver
     }
 
@@ -419,42 +379,34 @@ export class BuildRegistry {
         return this.#resolver
     }
 
+    // map unique finds of modules creating workers via worker ctor
+    // to entrypoints bundling those `clientScript` modules
+    resolveWorkers(build: Metafile): Array<WorkerManifest> | null {
+        if (!this.#workers) {
+            return null
+        }
+        const workers: Array<WorkerManifest> = []
+        for (const output of Object.values(build.outputs)) {
+            if (!output.entryPoint) continue
+            const inputs = Object.keys(output.inputs)
+            for (const worker of this.#workers) {
+                if (inputs.includes(worker.clientScript)) {
+                    workers.push({
+                        ...worker,
+                        dependentEntryPoint: output.entryPoint,
+                    })
+                }
+            }
+        }
+        return workers
+    }
+
     addWorker(worker: Omit<WorkerManifest, 'dependentEntryPoint'>) {
         if (!this.#workers) {
             this.#workers = [worker]
         } else {
             this.#workers.push(worker)
         }
-    }
-
-    completeBuild(result: BuildResult<{ metafile: true }>) {
-        const bundles: Record<string, string | null> = {}
-        for (const [outPath, output] of Object.entries(
-            result.metafile.outputs,
-        )) {
-            bundles[outPath.replace(/^build[/\\](dist|watch)/, '')] =
-                output.entryPoint || null
-        }
-        let workers: BuildManifest['workers'] = null
-        if (this.#workers) {
-            workers = []
-            for (const output of Object.values(result.metafile.outputs)) {
-                if (!output.entryPoint) continue
-                const inputs = Object.keys(output.inputs)
-                for (const worker of this.#workers) {
-                    if (inputs.includes(worker.clientScript)) {
-                        workers.push({
-                            ...worker,
-                            dependentEntryPoint: output.entryPoint,
-                        })
-                    }
-                }
-            }
-        }
-        this.#onComplete({
-            bundles,
-            workers,
-        })
     }
 }
 

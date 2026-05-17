@@ -14,7 +14,7 @@ import type { ResolvedDankConfig } from './config.ts'
 import { LOG } from './developer.ts'
 import type { Resolver } from './dirs.ts'
 import { DankError } from './errors.ts'
-import type { EntryPoint } from './esbuild.ts'
+import type { EsbuildEntrypoint } from './esbuild.ts'
 
 type CommentNode = DefaultTreeAdapterTypes.CommentNode
 type Document = DefaultTreeAdapterTypes.Document
@@ -46,7 +46,7 @@ type ImportedScript = {
     type: 'script' | 'style'
     href: string
     elem: Element
-    entrypoint: EntryPoint
+    entrypoint: EsbuildEntrypoint
 }
 
 type HtmlDecoration = {
@@ -65,7 +65,7 @@ export type HtmlEntrypointEvents = {
     change: [partial?: string]
     // Dispatched from HtmlEntrypoint to notify `dank serve` of changes to esbuild entrypoints
     // Parameter `entrypoints` is the esbuild mappings of the input and output paths
-    entrypoints: [entrypoints: Array<EntryPoint>]
+    entrypoints: [entrypoints: Array<EsbuildEntrypoint>]
     // Dispatched from HtmlEntrypoint when processing HTML is aborted on error
     error: [e: Error]
     // Dispatched from HtmlEntrypoint to notify when new HtmlEntrypoint.#document output is ready for write
@@ -214,7 +214,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         }
     }
 
-    #haveEntrypointsChanged(entrypoints: Array<EntryPoint>) {
+    #haveEntrypointsChanged(entrypoints: Array<EsbuildEntrypoint>) {
         const set = new Set(entrypoints.map(entrypoint => entrypoint.in))
         const changed = set.symmetricDifference(this.#entrypoints).size > 0
         this.#entrypoints = set
@@ -433,8 +433,8 @@ function hasAttr(elem: Element, name: string, value: string): boolean {
 
 function mergeEntrypoints(
     ...imports: Array<CollectedImports>
-): Array<EntryPoint> {
-    const entrypoints: Array<EntryPoint> = []
+): Array<EsbuildEntrypoint> {
+    const entrypoints: Array<EsbuildEntrypoint> = []
     for (const { scripts } of imports) {
         for (const script of scripts) {
             entrypoints.push(script.entrypoint)
