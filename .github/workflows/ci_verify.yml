@@ -15,6 +15,9 @@ on:
           - 'true'
           - 'false'
 
+env:
+  NODE_VERSION: 24
+
 jobs:
   verify:
     needs:
@@ -34,39 +37,42 @@ jobs:
     env:
       DEBUG: ${{ inputs.DEBUG || 'false'}}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm i
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+          run_install: true
       - run: pnpm build
       - run: pnpm test --test-concurrency=1
 
   verify-dank:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm i
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+          run_install: true
       - run: pnpm build
       - run: pnpm fmtcheck
 
   verify-create-dank:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm i
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+          run_install: true
       - working-directory: create-dank
         run: pnpm build
       - working-directory: create-dank
