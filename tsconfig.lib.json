@@ -1,0 +1,14 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "rootDir": "lib",
+        "outDir": "lib_js",
+        "lib": ["ESNext"],
+        "target": "ESNext",
+        "module": "NodeNext",
+        "types": ["node"],
+        "noEmit": false
+    },
+    "files": ["client/Client.d.ts"],
+    "include": ["lib/*.ts"]
+}

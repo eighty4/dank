@@ -1,7 +1,6 @@
 {
     "compilerOptions": {
-        "outDir": "lib_js",
-        "rootDir": "lib",
+        "rootDir": ".",
         "lib": ["ESNext"],
         "target": "ESNext",
         "module": "NodeNext",
@@ -16,8 +15,9 @@
         "noUnusedLocals": true,
         "noUnusedParameters": true,
         "strict": true,
-        "verbatimModuleSyntax": true
+        "verbatimModuleSyntax": true,
+        "noEmit": true
     },
-    "include": ["lib/*.ts"],
-    "exclude": ["node_modules"]
+    "include": ["lib/*.ts", "scripts/*.ts", "test/*.ts", ".prettierrc.ts"],
+    "exclude": ["client", "node_modules"]
 }

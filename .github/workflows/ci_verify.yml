@@ -59,7 +59,7 @@ jobs:
         with:
           cache: true
           run_install: true
-      - run: pnpm build
+      - run: pnpm build:release
       - run: pnpm fmtcheck
 
   verify-create-dank:

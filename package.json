@@ -30,7 +30,7 @@
     "scripts": {
         "build": "pnpm build:client && pnpm build:lib",
         "build:client": "node scripts/build_client.ts",
-        "build:lib": "tsc && tsc -p tsconfig.exports.json && tsc -p tsconfig.sw.json",
+        "build:lib": "tsc -p tsconfig.lib.json && tsc -p tsconfig.exports.json && tsc -p tsconfig.sw.json",
         "build:release": "pnpm build && node scripts/prepare_release.ts",
         "fmt": "prettier --write . --log-level warn",
         "fmtcheck": "prettier --check .",

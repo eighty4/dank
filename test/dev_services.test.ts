@@ -26,7 +26,6 @@ suite('Dev services', () => {
         })
 
         test('updates adds a new service', () => {
-            const controller = new AbortController()
             const services = new DevServices([])
             assert.equal(services.httpServices.length, 0)
             const configured: Array<DevService> = [

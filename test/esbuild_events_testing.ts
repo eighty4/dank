@@ -1,5 +1,11 @@
+import type { ReadableStreamReadResult } from 'node:stream/web'
 import { isPortListening } from './ports.ts'
-import type { EsbuildEvent } from '../client/esbuild.ts'
+
+type EsbuildEvent = {
+    added: Array<string>
+    updated: Array<any>
+    removed: Array<string>
+}
 
 const DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true'
 
@@ -16,7 +22,7 @@ export class EsbuildEvents {
     #reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>> | null = null
     #controller: AbortController = new AbortController()
 
-    constructor(port: number, debug: boolean = false) {
+    constructor(port: number) {
         this.#port = port
         this.#connect()
     }
