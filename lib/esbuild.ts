@@ -252,7 +252,9 @@ export function workersPlugin(
             // events triggered from merging build state get processed within that bermuda triangle
             if (mergeDevCtx) {
                 build.onEnd((result: BuildResult<{ metafile: true }>) => {
-                    mergeDevCtx(result.metafile, wr)
+                    if (!result.errors.length && result.metafile) {
+                        mergeDevCtx(result.metafile, wr)
+                    }
                 })
             }
         },
