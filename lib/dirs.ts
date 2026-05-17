@@ -10,6 +10,9 @@ export type DankDirectories = {
     pagesAbs: string
     projectRootAbs: string
     public: string
+
+    // absolute path to a subpath of the build metafiles dir
+    metafiles(subpath: string): string
 }
 
 export async function defaultProjectDirs(
@@ -30,6 +33,10 @@ export async function defaultProjectDirs(
         pagesAbs: join(projectRootAbs, pages),
         projectRootAbs,
         public: 'public',
+
+        metafiles: (subpath: string) => {
+            return join(projectRootAbs, 'build', 'metafiles', subpath)
+        },
     })
 }
 

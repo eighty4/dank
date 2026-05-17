@@ -5,7 +5,7 @@ import { createDank } from './dank_project_testing.ts'
 import { createServiceWorker } from '../lib/service_worker.ts'
 
 suite('Service workers', () => {
-    suite('dank build', () => {
+    suite('`dank build`', () => {
         test('adds service worker to dist and manifest', async () => {
             const project = await createDank()
             project.writeConfig(`\
@@ -102,7 +102,7 @@ export default {
         })
     })
 
-    suite('dank serve', () => {
+    suite('`dank serve`', () => {
         test('does not serve service worker', async () => {
             const project = await createDank()
             project.writeConfig(`\
@@ -126,7 +126,7 @@ export default {
         })
     })
 
-    suite('dank serve --preview', () => {
+    suite('`dank serve --preview`', () => {
         test('serves service worker and includes in manifest', async () => {
             const project = await createDank()
             project.writeConfig(`\

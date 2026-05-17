@@ -140,7 +140,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         return this.#workers
     }
 
-    // add a build output that does is manually injected into build output,
+    // explicit add build output to registry & write to build/dist
     // not from HTML processing, public directory, or esbuild entrypoints
     async addBuildOutput(url: `/${string}`, content: string) {
         if (

@@ -119,6 +119,32 @@ suite('`dank build`', () => {
                 ),
             )
         })
+
+        test('writes build/metafiles webpages.json and workers.json', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.ts': `\
+                        const w = new Worker('./computational-wizardry.ts')
+                        w.onerror = console.error`,
+                    'pages/computational-wizardry.ts': '',
+                },
+            })
+            await project.build()
+            assert.ok(
+                await readTest(
+                    project.path('build', 'metafiles', 'webpages.json'),
+                    /"inputs"/,
+                    /"outputs"/,
+                ),
+            )
+            assert.ok(
+                await readTest(
+                    project.path('build', 'metafiles', 'workers.json'),
+                    /"inputs"/,
+                    /"outputs"/,
+                ),
+            )
+        })
     })
 
     suite('errors', () => {

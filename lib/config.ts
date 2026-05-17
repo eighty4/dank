@@ -61,7 +61,6 @@ export async function loadConfig(
         realm: 'config',
         message: 'loading config module',
         data: {
-            dirs,
             modulePath,
         },
     })

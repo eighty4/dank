@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 
+import { green, red } from './ansi.ts'
 import { buildWebsite } from './build.ts'
-import { DankError } from './errors.ts'
+import {
+    DankError,
+    isEsbuildBuildFailure,
+    printEsbuildBuildFailureMessages,
+} from './errors.ts'
 import { serveWebsite } from './serve.ts'
 
 function printHelp(task?: 'build' | 'serve'): never {
@@ -57,11 +62,9 @@ const task: 'build' | 'serve' = (function resolveTask() {
                     if (showHelp) {
                         printHelp()
                     } else if (typeof shifted === 'undefined') {
-                        printError('missing command')
-                        printHelp()
+                        printCommandError('missing command')
                     } else {
-                        printError(shifted + " isn't a command")
-                        printHelp()
+                        printCommandError(shifted + " isn't a command")
                     }
             }
         }
@@ -82,30 +85,23 @@ try {
             await serveWebsite()
     }
 } catch (e: unknown) {
-    errorExit(e)
+    printError(e)
+    process.exit(1)
+}
+
+function printCommandError(msg: string): never {
+    console.error(red('error:'), msg)
+    printHelp()
 }
 
 function printError(e: unknown) {
-    if (e !== null) {
-        if (e instanceof DankError) {
-            console.error(red('error:'), e.message)
-        } else if (e instanceof Error) {
-            console.error(red('error:'), e.stack ?? e.message)
-        } else {
-            console.error(red('error:'), e)
-        }
+    if (e instanceof DankError) {
+        console.error(red('error:'), e.message)
+    } else if (isEsbuildBuildFailure(e)) {
+        printEsbuildBuildFailureMessages(e)
+    } else if (e instanceof Error) {
+        console.error(red('error:'), e.stack ?? e.message)
+    } else {
+        console.error(red('error:'), e)
     }
-}
-
-function green(s: string): string {
-    return `\u001b[32m${s}\u001b[0m`
-}
-
-function red(s: string): string {
-    return `\u001b[31m${s}\u001b[0m`
-}
-
-function errorExit(e?: unknown): never {
-    printError(e)
-    process.exit(1)
 }

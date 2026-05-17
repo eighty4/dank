@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { suite, test } from 'node:test'
 import esbuild from 'esbuild'
@@ -491,6 +491,9 @@ w = 'w' // new SharedWorker('./partial-line.ts')`,
             w.onerror = console.error
             `,
                         },
+                    })
+                    await mkdir(project.path('build/metafiles'), {
+                        recursive: true,
                     })
                     const registry = new WebsiteRegistry(
                         await project.loadConfig(),

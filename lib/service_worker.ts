@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import esbuild from 'esbuild'
+import { type PluginBuild, build } from 'esbuild'
 import type { ServiceWorkerBuild } from './dank.ts'
 
 export type ServiceWorkerCaching = {
@@ -27,7 +27,7 @@ export async function createServiceWorker(
 async function buildServiceWorkerBackend(
     caching: ServiceWorkerCaching,
 ): Promise<string> {
-    const result = await esbuild.build({
+    const result = await build({
         logLevel: 'silent',
         absWorkingDir: join(import.meta.dirname, '../client'),
         entryPoints: ['ServiceWorker.ts'],
@@ -42,7 +42,7 @@ async function buildServiceWorkerBackend(
         plugins: [
             {
                 name: 'DANK:sw',
-                setup(build: esbuild.PluginBuild) {
+                setup(build: PluginBuild) {
                     build.onResolve({ filter: /DANK:sw/ }, () => {
                         return {
                             path: join(import.meta.dirname, 'DANK.sw.json'),

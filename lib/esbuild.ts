@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises'
-import esbuild, {
+import { readFile, writeFile } from 'node:fs/promises'
+import {
     type BuildContext,
     type BuildOptions,
     type BuildResult,
@@ -9,9 +9,13 @@ import esbuild, {
     type PartialMessage,
     type Plugin,
     type PluginBuild,
+    build,
+    context,
 } from 'esbuild'
 import type { DefineDankGlobal } from './define.ts'
 import type { WebsiteRegistry, WorkerBuildRegistry } from './registry.ts'
+import { printEsbuildWarnings } from './errors.ts'
+import type { DankDirectories } from './dirs.ts'
 
 export type EsbuildEntrypoint = { in: string; out: string }
 
@@ -21,12 +25,13 @@ export async function esbuildDevContext(
     entryPoints: Array<EsbuildEntrypoint>,
 ): Promise<BuildContext> {
     const wr = r.workerRegistry()
-    return await esbuild.context({
+    return await context({
         define,
         entryNames: '[dir]/[name]',
         entryPoints: mapEntryPointPaths(entryPoints),
         outdir: r.config.dirs.buildWatch,
         ...commonBuildOptions(r),
+        logLevel: 'warning',
         plugins: esbuildPlugins(r, wr, true),
         splitting: false,
         write: false,
@@ -39,7 +44,7 @@ export async function esbuildWebpages(
     entryPoints: Array<EsbuildEntrypoint>,
 ): Promise<void> {
     const wr = r.workerRegistry()
-    const { metafile } = await esbuild.build({
+    const { warnings, metafile } = await build({
         define,
         entryNames: '[dir]/[name]-[hash]',
         entryPoints: mapEntryPointPaths(entryPoints),
@@ -47,6 +52,10 @@ export async function esbuildWebpages(
         ...commonBuildOptions(r),
         plugins: esbuildPlugins(r, wr),
     })
+    if (warnings.length) {
+        printEsbuildWarnings(warnings)
+    }
+    await writeMetafile(r.config.dirs, 'webpages.json', metafile)
     r.mergeBuiltBundles(metafile)
     r.mergeWorkerRegistry(metafile, wr)
 }
@@ -57,7 +66,7 @@ export async function esbuildWorkers(
     entryPoints: Array<EsbuildEntrypoint>,
 ): Promise<void> {
     const wr = r.workerRegistry()
-    const { metafile } = await esbuild.build({
+    const { warnings, metafile } = await build({
         define,
         entryNames: '[dir]/[name]-[hash]',
         entryPoints: mapEntryPointPaths(entryPoints),
@@ -69,13 +78,26 @@ export async function esbuildWorkers(
         write: true,
         assetNames: 'assets/[name]-[hash]',
     })
+    if (warnings.length) {
+        printEsbuildWarnings(warnings)
+    }
+    await writeMetafile(r.config.dirs, 'workers.json', metafile)
     r.mergeBuiltBundles(metafile)
+}
+
+async function writeMetafile(
+    dirs: DankDirectories,
+    file: 'webpages.json' | 'workers.json',
+    metafile: Metafile,
+): Promise<void> {
+    await writeFile(dirs.metafiles(file), JSON.stringify(metafile, null, 4))
 }
 
 function commonBuildOptions(
     r: WebsiteRegistry,
 ): BuildOptions & { metafile: true } {
     return {
+        logLevel: 'silent',
         absWorkingDir: r.config.dirs.projectRootAbs,
         assetNames: 'assets/[name]-[hash]',
         bundle: true,
