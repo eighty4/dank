@@ -8,29 +8,33 @@ import { LOG } from './developer.ts'
 import { Resolver, type DankDirectories } from './dirs.ts'
 import type { EsbuildEntrypoint } from './esbuild.ts'
 import { HtmlEntrypoint } from './html.ts'
+import { DankError } from './errors.ts'
+
+export type EntrypointManifest = {
+    cssBundle?: `/${string}`
+    // matches EsbuildEntrypoint['in'] of WebpageRegistration
+    entrypoint: string
+    // outputs paths in dist dir
+    sharedChunks: Array<`/${string}`>
+    urlPath: `/${string}`
+}
 
 export type WorkerManifest = {
-    // path to module dependent on worker
+    // path to bundle containing `clientScript`
+    clientEntrypoint: string
+    // path to script with Worker ctor call
     clientScript: string
     ctor: 'Worker' | 'SharedWorker'
-    // path to bundled entrypoint dependent on `clientScript`
-    dependentEntryPoint: string
     entrypoint: EsbuildEntrypoint
     placeholderCtorSrc: `/${string}`
     originalCtorSrc: string
-}
-
-export type WebsiteRegistryEvents = {
-    entrypoints: []
-    webpage: [entrypoint: HtmlEntrypoint]
-    workers: []
 }
 
 type WebpageRegistration = {
     pageUrl: `/${string}`
     fsPath: string
     html: HtmlEntrypoint
-    bundles: Array<EsbuildEntrypoint>
+    bundleEntrypoints: Array<EsbuildEntrypoint>
     urlRewrite?: UrlRewrite
 }
 
@@ -39,18 +43,25 @@ export type UrlRewrite = {
     url: string
 }
 
-export type UrlRewriteProvider = {
-    urlRewrites: Array<UrlRewrite>
+export type WebsiteRegistryEvents = {
+    // webpage css & js entrypoints changed
+    entrypoints: []
+    // webpage added to website registry
+    webpage: [entrypoint: HtmlEntrypoint]
+    // website worker entrypoints changed
+    workers: []
 }
 
 // manages website resources during `dank build` and `dank serve`
 export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
-    // paths of bundled esbuild outputs, as built by esbuild
-    #bundles: Set<`/${string}`> = new Set()
+    // paths of bundled esbuild outputs mapped to entrypoint metadata
+    #bundles: Record<`/${string}`, EntrypointManifest> = {}
     #c: ResolvedDankConfig
     // public dir assets
     #copiedAssets: Set<`/${string}`> | null = null
-    // map of entrypoints to their output path
+    // map of entrypoints to their hashed output paths
+    // includes all hrefs found in <script src>, <link href> and Worker URLs
+    // (excluding css bundles built from a js entrypoint)
     #entrypointHrefs: Record<string, string | null> = {}
     #otherOutputs: Set<`/${string}`> | null = null
     #pages: Record<`/${string}`, WebpageRegistration> = {}
@@ -104,7 +115,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
     get webpageEntryPoints(): Array<EsbuildEntrypoint> {
         const unique: Set<EsbuildEntrypoint['in']> = new Set()
         return Object.values(this.#pages)
-            .flatMap(p => p.bundles)
+            .flatMap(p => p.bundleEntrypoints)
             .filter(entryPoint => {
                 if (unique.has(entryPoint.in)) {
                     return false
@@ -117,7 +128,9 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
 
     get webpageAndWorkerEntryPoints(): Array<EsbuildEntrypoint> {
         const unique: Set<EsbuildEntrypoint['in']> = new Set()
-        const pageBundles = Object.values(this.#pages).flatMap(p => p.bundles)
+        const pageBundles = Object.values(this.#pages).flatMap(
+            p => p.bundleEntrypoints,
+        )
         const workerBundles = this.workerEntryPoints
         const bundles = workerBundles
             ? [...pageBundles, ...workerBundles]
@@ -145,7 +158,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
     async addBuildOutput(url: `/${string}`, content: string) {
         if (
             this.#pages[url] ||
-            this.#bundles.has(url) ||
+            this.#bundles[url] ||
             this.#otherOutputs?.has(url) ||
             this.#copiedAssets?.has(url)
         ) {
@@ -170,17 +183,33 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
     }
 
     files(): Array<`/${string}`> {
-        const files = new Set<`/${string}`>()
-        for (const pageUrl of Object.keys(this.#pages))
-            files.add(
-                pageUrl === '/'
-                    ? '/index.html'
-                    : (`${pageUrl}/index.html` as `/${string}`),
-            )
-        for (const f of this.#bundles) files.add(f)
-        if (this.#copiedAssets) for (const f of this.#copiedAssets) files.add(f)
-        if (this.#otherOutputs) for (const f of this.#otherOutputs) files.add(f)
-        return Array.from(files)
+        const htmlPages = Object.keys(this.#pages).map(pageUrl =>
+            pageUrl === '/'
+                ? '/index.html'
+                : (`${pageUrl}/index.html` as `/${string}`),
+        )
+        const entrypoints = new Set<`/${string}`>()
+        const chunks = new Set<`/${string}`>()
+        for (const b of Object.values(this.#bundles)) {
+            entrypoints.add(b.urlPath)
+            if (b.cssBundle) entrypoints.add(b.cssBundle)
+            for (const c of b.sharedChunks) {
+                chunks.add(c)
+            }
+        }
+        let assets = new Set<`/${string}`>()
+        for (const ac of [this.#copiedAssets, this.#otherOutputs]) {
+            if (ac) {
+                const overlap = ac.intersection(assets)
+                if (overlap.size)
+                    throw new DankError(
+                        'website assets duplicated in website registry: ' +
+                            Array.from(overlap).join(', '),
+                    )
+                assets = ac.union(assets)
+            }
+        }
+        return [...htmlPages, ...entrypoints, ...chunks, ...assets]
     }
 
     mappedHref(lookup: string): string {
@@ -188,7 +217,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         if (found) {
             return found
         } else {
-            throw Error(`mapped href for ${lookup} not found`)
+            throw new DankError(`mapped href for ${lookup} not found`)
         }
     }
 
@@ -199,10 +228,34 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
 
     mergeBuiltBundles(build: Metafile): void {
         for (const [outPath, output] of Object.entries(build.outputs)) {
-            const bundle = outPath.replace(/^build[/\\](dist|watch)/, '')
-            this.#bundles.add(ensurePath(bundle))
-            if (output.entryPoint) {
-                this.#entrypointHrefs[output.entryPoint] = bundle
+            if (!output.entryPoint) {
+                if (output.cssBundle) {
+                    throw new DankError(
+                        'unprepared scenario of a shared chunk outputting a css bundle',
+                    )
+                }
+                continue
+            }
+            const urlPath = stripBuildDir(outPath)
+            const previousCssBundle = this.#bundles[urlPath]?.cssBundle
+            this.#entrypointHrefs[output.entryPoint] = urlPath
+            const entrypoint: EntrypointManifest = (this.#bundles[urlPath] = {
+                entrypoint: output.entryPoint,
+                sharedChunks: output.imports.map(i => stripBuildDir(i.path)),
+                urlPath,
+            })
+            if (output.cssBundle) {
+                entrypoint.cssBundle = stripBuildDir(output.cssBundle)
+            }
+            if (output.cssBundle !== previousCssBundle) {
+                for (const webpage of this.#webpagesWithEntrypoint(
+                    entrypoint.entrypoint,
+                )) {
+                    webpage.html.setCssBundle(
+                        entrypoint.entrypoint,
+                        entrypoint.cssBundle || null,
+                    )
+                }
             }
         }
     }
@@ -227,7 +280,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
     }
 
     #doesBuildUpdateWorkerEntrypoints(
-        workers: Array<Omit<WorkerManifest, 'dependentEntryPoint'>> | null,
+        workers: Array<Omit<WorkerManifest, 'clientEntrypoint'>> | null,
     ): boolean {
         if (this.#workers && workers) {
             const next = new Set(workers.map(w => w.entrypoint.in))
@@ -294,10 +347,10 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
             fsPath: mapping.webpage,
             html,
             urlRewrite,
-            bundles: [],
+            bundleEntrypoints: [],
         }
         html.on('entrypoints', entrypoints =>
-            this.#setWebpageBundles(html.url, entrypoints),
+            this.#setWebpageBundleEntrypoints(html.url, entrypoints),
         )
         this.emit('webpage', html)
         html.emit('change')
@@ -354,9 +407,22 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         }
     }
 
-    #setWebpageBundles(url: `/${string}`, bundles: Array<EsbuildEntrypoint>) {
-        this.#pages[url].bundles = bundles
+    #setWebpageBundleEntrypoints(
+        url: `/${string}`,
+        entrypoints: Array<EsbuildEntrypoint>,
+    ) {
+        this.#pages[url].bundleEntrypoints = entrypoints
         this.emit('entrypoints')
+    }
+
+    #webpagesWithEntrypoint(
+        entrypoint: EsbuildEntrypoint['in'],
+    ): Array<WebpageRegistration> {
+        return Object.values(this.#pages).filter(webpage =>
+            webpage.bundleEntrypoints.some(
+                webpageBundle => webpageBundle.in === entrypoint,
+            ),
+        )
     }
 }
 
@@ -364,7 +430,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
 export class WorkerBuildRegistry {
     #dirs: DankDirectories
     #resolver: Resolver
-    #workers: Array<Omit<WorkerManifest, 'dependentEntryPoint'>> | null = null
+    #workers: Array<Omit<WorkerManifest, 'clientEntrypoint'>> | null = null
 
     constructor(dirs: DankDirectories, resolver: Resolver) {
         this.#dirs = dirs
@@ -393,7 +459,7 @@ export class WorkerBuildRegistry {
                 if (inputs.includes(worker.clientScript)) {
                     workers.push({
                         ...worker,
-                        dependentEntryPoint: output.entryPoint,
+                        clientEntrypoint: output.entryPoint,
                     })
                 }
             }
@@ -401,7 +467,7 @@ export class WorkerBuildRegistry {
         return workers
     }
 
-    addWorker(worker: Omit<WorkerManifest, 'dependentEntryPoint'>) {
+    addWorker(worker: Omit<WorkerManifest, 'clientEntrypoint'>) {
         if (!this.#workers) {
             this.#workers = [worker]
         } else {
@@ -410,7 +476,13 @@ export class WorkerBuildRegistry {
     }
 }
 
-function ensurePath(path: string): `/${string}` {
+const stripBuildDirPattern = /^build[/\\](dist|watch)/
+
+function stripBuildDir(p: string): `/${string}` {
+    return ensureWebPath(p.replace(stripBuildDirPattern, ''))
+}
+
+function ensureWebPath(path: string): `/${string}` {
     if (path.startsWith('/')) {
         return path as `/${string}`
     } else {

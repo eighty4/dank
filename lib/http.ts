@@ -13,12 +13,12 @@ import mime from 'mime'
 import type { WebsiteManifest } from './dank.ts'
 import type { DankDirectories } from './dirs.ts'
 import type { DankFlags } from './flags.ts'
-import type {
-    UrlRewrite,
-    UrlRewriteProvider,
-    WebsiteRegistry,
-} from './registry.ts'
+import type { UrlRewrite, WebsiteRegistry } from './registry.ts'
 import type { DevServices } from './services.ts'
+
+export type UrlRewriteProvider = {
+    urlRewrites: Array<UrlRewrite>
+}
 
 export type FrontendFetcher = (
     url: URL,

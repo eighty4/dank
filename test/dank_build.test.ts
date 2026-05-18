@@ -145,6 +145,35 @@ suite('`dank build`', () => {
                 ),
             )
         })
+
+        suite('es module importing css bundle', () => {
+            test('added to build output and html document', async () => {
+                const project = await createDank({
+                    pages: {
+                        '/': './dank.html',
+                    },
+                    files: {
+                        'pages/dank.css':
+                            'html, body { background: rebeccapurple; }',
+                        'pages/list.module.css':
+                            '.list { background: orange; }',
+                        'pages/dank.ts': `import { makeList } from './list.ts'; document.body.appendChild(makeList())`,
+                        'pages/list.ts': `import styles from './list.module.css'; export const makeList = () => { const ol = document.createElement('ol'); ol.classList.add(styles.list); return ol }`,
+                    },
+                })
+                await project.build()
+                assert.ok(
+                    await readTest(
+                        project.path('build/dist/index.html'),
+                        /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
+                        /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
+                    ),
+                    `css links not found in ${project.path('build/dist/index.html')}`,
+                )
+                await project.assertDistExists('dank.page.css')
+                await project.assertDistExists('dank.css')
+            })
+        })
     })
 
     suite('errors', () => {
@@ -179,12 +208,15 @@ import { writeFileSync } from 'node:fs'
 export default {
     pages: { '/': './dank.html' },
     afterBuild: ({website}) => {
-        writeFileSync('js.txt', website.files.filter(f => f.includes('js')).join(', '))
+        writeFileSync('test', 'test')
     }
 }
 `)
             await project.build()
-            assert.ok(await readFile(join(project.dir, 'js.txt'), 'utf8'))
+            assert.equal(
+                await readFile(join(project.dir, 'test'), 'utf8'),
+                'test',
+            )
         })
 
         test('works if null', async () => {
@@ -207,12 +239,15 @@ export default {
     pages: { '/': './dank.html' },
     afterBuild: async ({website}) => {
         await new Promise(res => setTimeout(res, 500))
-        await writeFile('js.txt', website.files.filter(f => f.includes('js')).join(', '))
+        await writeFile('test', 'test')
     }
 }
 `)
             await project.build()
-            assert.ok(await readFile(join(project.dir, 'js.txt'), 'utf8'))
+            assert.equal(
+                await readFile(join(project.dir, 'test'), 'utf8'),
+                'test',
+            )
         })
     })
 })

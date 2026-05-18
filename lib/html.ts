@@ -6,6 +6,7 @@ import { extname } from 'node:path/posix'
 import {
     defaultTreeAdapter,
     type DefaultTreeAdapterTypes,
+    html as parseHtml5,
     parse,
     parseFragment,
     serialize,
@@ -42,16 +43,24 @@ type PartialContent = PartialReference & {
     // partials: Array<PartialContent>
 }
 
-type ImportedScript = {
-    type: 'script' | 'style'
+type CssBundleLink = {
+    link: Element
+    url: `/${string}`
+}
+
+type ImportedScript = (
+    | {
+          type: 'script'
+          // if esbuild outputs a css bundle
+          cssBundle?: CssBundleLink | null
+      }
+    | {
+          type: 'style'
+      }
+) & {
     href: string
     elem: Element
     entrypoint: EsbuildEntrypoint
-}
-
-type HtmlDecoration = {
-    type: 'script'
-    js: string
 }
 
 // implicitly impl'd by WebsiteRegistry
@@ -60,16 +69,14 @@ export type HtmlHrefs = {
 }
 
 export type HtmlEntrypointEvents = {
-    // Dispatched from fs watch to notify HtmlEntrypoint of changes to HtmlEntrypoint.#fsPath
-    // Optional parameter `partial` notifies the page when a partial of the page has changed
+    // emit on source change to reprocess html
     change: [partial?: string]
-    // Dispatched from HtmlEntrypoint to notify `dank serve` of changes to esbuild entrypoints
-    // Parameter `entrypoints` is the esbuild mappings of the input and output paths
+    // esbuild entrypoints changed
     entrypoints: [entrypoints: Array<EsbuildEntrypoint>]
-    // Dispatched from HtmlEntrypoint when processing HTML is aborted on error
+    // aborted processing html on error
     error: [e: Error]
-    // Dispatched from HtmlEntrypoint to notify when new HtmlEntrypoint.#document output is ready for write
-    // Parameter `html` is the updated html content of the page ready to be output to the build dir
+    // new html output ready to write to watch dir
+    // this event is only for `serve` mode and does not rewrite hrefs
     output: [html: string]
 }
 
@@ -114,9 +121,63 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
     }
 
     output(hrefs?: HtmlHrefs): string {
-        this.#injectPartials()
         this.#rewriteHrefs(hrefs)
         return serialize(this.#document)
+    }
+
+    setCssBundle(
+        entrypoint: EsbuildEntrypoint['in'],
+        cssBundle: `/${string}` | null,
+    ) {
+        for (const script of this.#scripts) {
+            if (
+                script.type === 'script' &&
+                script.entrypoint.in === entrypoint
+            ) {
+                if ((script.cssBundle?.url || null) === cssBundle) {
+                    return
+                }
+                if (cssBundle) {
+                    if (script.cssBundle) {
+                        script.cssBundle.link.attrs.find(
+                            attr => attr.name === 'href',
+                        )!.value = cssBundle
+                    } else {
+                        script.cssBundle = {
+                            url: cssBundle,
+                            link: defaultTreeAdapter.createElement(
+                                'link',
+                                parseHtml5.NS.HTML,
+                                [
+                                    { name: 'rel', value: 'stylesheet' },
+                                    { name: 'href', value: cssBundle },
+                                ],
+                            ),
+                        }
+                        const head = findOrInsertHead(this.#document)
+                        if (!head) {
+                            throw new DankError(
+                                `unable to find or create html > head elements in \`${this.#fsPath}\``,
+                            )
+                        }
+                        defaultTreeAdapter.appendChild(
+                            head,
+                            script.cssBundle.link,
+                        )
+                    }
+                } else if (script.cssBundle) {
+                    defaultTreeAdapter.detachNode(script.cssBundle.link)
+                    script.cssBundle = null
+                }
+                if (this.listenerCount('output')) {
+                    this.emit('output', this.output())
+                }
+                return
+            }
+        }
+        throw new DankError(
+            `expected to find entrypoint \`${entrypoint}\` imported by page \`${this.#url}\``,
+        )
     }
 
     usesPartial(fsPath: string): boolean {
@@ -152,12 +213,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
             )
             return
         }
-        if (this.#clientJS !== null) {
-            const decoration = await this.#clientJS.retrieve(
-                this.#c.esbuildPort,
-            )
-            this.#addScriptDecoration(document, decoration.js)
-        }
+        const devScript = await this.#clientJS?.retrieve(this.#c.esbuildPort)
         if (update !== this.#update) {
             // another update has started so aborting this one
             // only do synchronous work after this check
@@ -166,6 +222,8 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         this.#document = document
         this.#partials = partials
         this.#scripts = imports.scripts
+        this.#injectPartials()
+        if (devScript) this.#addScriptInline(devScript)
         const entrypoints = mergeEntrypoints(
             imports,
             ...partials.map(p => p.imports),
@@ -306,10 +364,10 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         }
     }
 
-    #addScriptDecoration(document: Document, js: string) {
+    #addScriptInline(js: string) {
         const scriptNode = parseFragment(`<script type="module">${js}</script>`)
             .childNodes[0]
-        const htmlNode = document.childNodes.find(
+        const htmlNode = this.#document.childNodes.find(
             node => node.nodeName === 'html',
         ) as ParentNode
         const headNode = htmlNode.childNodes.find(
@@ -327,7 +385,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         }
     }
 
-    async #injectPartials() {
+    #injectPartials() {
         for (const { commentNode, fragment } of this.#partials) {
             if (!this.#c.flags.production) {
                 defaultTreeAdapter.insertBefore(
@@ -423,6 +481,34 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
     }
 }
 
+function findOrInsertHead(document: Document): ParentNode | null {
+    for (const maybeHtmlElement of document.childNodes) {
+        if (maybeHtmlElement.nodeName === 'html') {
+            for (const maybeHeadElement of maybeHtmlElement.childNodes) {
+                if (maybeHeadElement.nodeName === 'head') {
+                    return maybeHeadElement
+                }
+            }
+            const head = defaultTreeAdapter.createElement(
+                'head',
+                parseHtml5.NS.HTML,
+                [],
+            )
+            if (maybeHtmlElement.childNodes.length) {
+                defaultTreeAdapter.insertBefore(
+                    maybeHtmlElement,
+                    head,
+                    maybeHtmlElement.childNodes[0],
+                )
+            } else {
+                defaultTreeAdapter.appendChild(maybeHtmlElement, head)
+            }
+            return head
+        }
+    }
+    return null
+}
+
 function getAttr(elem: Element, name: string) {
     return elem.attrs.find(attr => attr.name === name)
 }
@@ -475,7 +561,7 @@ class ClientJS {
 
     #esbuildPort: number
     #read: Promise<string>
-    #result: Promise<HtmlDecoration>
+    #result: Promise<string>
 
     private constructor(esbuildPort: number) {
         this.#esbuildPort = esbuildPort
@@ -486,17 +572,14 @@ class ClientJS {
         this.#result = this.#read.then(this.#transform)
     }
 
-    async retrieve(esbuildPort: number): Promise<HtmlDecoration> {
+    async retrieve(esbuildPort: number): Promise<string> {
         if (esbuildPort !== this.#esbuildPort) {
             this.#result = this.#read.then(this.#transform)
         }
         return await this.#result
     }
 
-    #transform = (js: string): HtmlDecoration => {
-        return {
-            type: 'script',
-            js: js.replace('3995', '' + this.#esbuildPort),
-        }
+    #transform = (js: string): string => {
+        return js.replace('3995', '' + this.#esbuildPort)
     }
 }

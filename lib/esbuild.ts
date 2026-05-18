@@ -29,7 +29,7 @@ export async function esbuildDevContext(
         define,
         entryNames: '[dir]/[name]',
         entryPoints: mapEntryPointPaths(entryPoints),
-        outdir: r.config.dirs.buildWatch,
+        outdir: r.config.dirs.buildDist,
         ...commonBuildOptions(r),
         logLevel: 'warning',
         plugins: esbuildPlugins(r, wr, true),

@@ -4,9 +4,13 @@
 
 ### Added
 
+- CSS output from `esbuild.build` when bundling a JS entrypoint
+  with CSS imports is now supported, appending the CSS bundle
+  with a `<link rel="stylesheet">` to the appropriate HTML pages
 - `dank.config.ts` supports a `buildTag` string expression or builder
-  function to customize the website's build tag using expression
-  placeholders like `{{date}}-{{gitHash}}` to inject build metadata
+  function to create the website's build tag using expression
+  placeholders like `{{date}}-{{gitHash}}` to inject metadata
+  into a custom build tag
 - `dank.config.ts` can now configure a callback for a completed
   build by configuring `afterBuild` which will be called with
   `AfterBuildArgs` that includes `WebsiteManifest`

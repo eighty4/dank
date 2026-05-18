@@ -354,12 +354,17 @@ async function npmInstall(dir: string) {
         /"@eighty4\/dank": ".*"/,
         `"@eighty4/dank": "file:${absPathToDank.replaceAll('\\', '\\\\')}"`,
     )
+    await _npmInstall(dir)
+}
+
+async function _npmInstall(dir: string) {
     await new Promise<void>((res, rej) => {
+        const cmd = 'npm i'
         let timeout: ReturnType<typeof setTimeout> | null = null
-        const npmInstall = exec('npm i', { cwd: dir }, err => {
+        const npmInstall = exec(cmd, { cwd: dir }, err => {
             if (timeout) clearTimeout(timeout)
             if (err) {
-                rej(Error(`failed \`npm i\`: ${err.message}`))
+                rej(Error(`failed \`${cmd}\`: ${err.message}`))
             } else {
                 res()
             }
@@ -367,7 +372,7 @@ async function npmInstall(dir: string) {
         const TIMEOUT = 20000
         timeout = setTimeout(() => {
             npmInstall.kill()
-            rej(Error(`failed \`npm i\`: timed out after ${TIMEOUT / 1000}s`))
+            rej(Error(`failed \`${cmd}\`: timed out after ${TIMEOUT / 1000}s`))
         }, TIMEOUT)
     })
 }

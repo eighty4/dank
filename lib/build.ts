@@ -87,7 +87,7 @@ async function rewriteWorkerUrls(
         return
     }
     const dependentBundlePaths = workers.map(w =>
-        registry.mappedHref(w.dependentEntryPoint),
+        registry.mappedHref(w.clientEntrypoint),
     )
 
     const bundleOutputs: Record<string, string> = {}
@@ -106,7 +106,7 @@ async function rewriteWorkerUrls(
     const rewriteChains: Record<string, Array<(s: string) => string>> = {}
     for (const p of dependentBundlePaths) rewriteChains[p] = []
     for (const w of workers) {
-        rewriteChains[registry.mappedHref(w.dependentEntryPoint)].push(s =>
+        rewriteChains[registry.mappedHref(w.clientEntrypoint)].push(s =>
             s.replace(
                 createWorkerRegex(w.ctor, w.placeholderCtorSrc),
                 match =>

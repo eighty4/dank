@@ -11,6 +11,7 @@ import {
     createBuiltDistFilesFetcher,
     createDevServeFilesFetcher,
     startWebServer,
+    type UrlRewriteProvider,
 } from './http.ts'
 import { WebsiteRegistry, type UrlRewrite } from './registry.ts'
 import { DevServices, type ManagedServiceLabel } from './services.ts'
@@ -46,7 +47,7 @@ async function startPreviewMode() {
         c.dankPort,
         c.flags,
         c.dirs,
-        { urlRewrites },
+        { urlRewrites } satisfies UrlRewriteProvider,
         frontend,
         devServices,
     )

@@ -99,8 +99,6 @@ function printError(e: unknown) {
         console.error(red('error:'), e.message)
     } else if (isEsbuildBuildFailure(e)) {
         printEsbuildBuildFailureMessages(e)
-    } else if (e instanceof Error) {
-        console.error(red('error:'), e.stack ?? e.message)
     } else {
         console.error(red('error:'), e)
     }

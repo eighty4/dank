@@ -1,6 +1,8 @@
 import type { BuildFailure, Message } from 'esbuild'
 import { bold, green, red, whiteOnRed, whiteOnYellow, yellow } from './ansi.ts'
 
+// throw for user facing errors
+// throw Error to show a stacktrace
 export class DankError extends Error {
     constructor(message: string, cause?: Error) {
         super(message, { cause })

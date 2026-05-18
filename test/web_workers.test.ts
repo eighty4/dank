@@ -187,9 +187,9 @@ w.onerror = console.error
                     })
                     assert.deepEqual(workerRegistry.resolveWorkers(metafile), [
                         {
-                            clientScript: 'pages/mega-performant-ui-thread.ts',
-                            dependentEntryPoint:
+                            clientEntrypoint:
                                 'pages/mega-performant-ui-thread.ts',
+                            clientScript: 'pages/mega-performant-ui-thread.ts',
                             ctor,
                             entrypoint: {
                                 in: 'pages/computational-wizardry.ts',
@@ -248,9 +248,9 @@ w.onerror = console.error
                     })
                     assert.deepEqual(workerRegistry.resolveWorkers(metafile), [
                         {
-                            clientScript: 'pages/mega-performant-ui-thread.ts',
-                            dependentEntryPoint:
+                            clientEntrypoint:
                                 'pages/mega-performant-ui-thread.ts',
+                            clientScript: 'pages/mega-performant-ui-thread.ts',
                             ctor,
                             entrypoint: {
                                 in: 'pages/computational-wizardry.ts',
@@ -309,9 +309,9 @@ const w2 = new ${ctor}('./data-orchestration.ts')
                     })
                     assert.deepEqual(workerRegistry.resolveWorkers(metafile), [
                         {
-                            clientScript: 'pages/mega-performant-ui-thread.ts',
-                            dependentEntryPoint:
+                            clientEntrypoint:
                                 'pages/mega-performant-ui-thread.ts',
+                            clientScript: 'pages/mega-performant-ui-thread.ts',
                             ctor,
                             entrypoint: {
                                 in: 'pages/computational-wizardry.ts',
@@ -322,9 +322,9 @@ const w2 = new ${ctor}('./data-orchestration.ts')
                                 '/.lib/pages/computational-wizardry.js',
                         } satisfies WorkerManifest,
                         {
-                            clientScript: 'pages/mega-performant-ui-thread.ts',
-                            dependentEntryPoint:
+                            clientEntrypoint:
                                 'pages/mega-performant-ui-thread.ts',
+                            clientScript: 'pages/mega-performant-ui-thread.ts',
                             ctor,
                             entrypoint: {
                                 in: 'pages/data-orchestration.ts',
@@ -384,9 +384,9 @@ w.onerror = console.error`,
                     })
                     assert.deepEqual(workerRegistry.resolveWorkers(metafile), [
                         {
-                            clientScript: 'pages/mega-performant-ui-code.ts',
-                            dependentEntryPoint:
+                            clientEntrypoint:
                                 'pages/mega-performant-ui-thread.ts',
+                            clientScript: 'pages/mega-performant-ui-code.ts',
                             ctor,
                             entrypoint: {
                                 in: 'pages/computational-wizardry.ts',
@@ -433,7 +433,7 @@ w.onerror = console.error`,
                         {
                             clientScript:
                                 'pages/lib/mega-performant-ui-code.ts',
-                            dependentEntryPoint:
+                            clientEntrypoint:
                                 'pages/mega-performant-ui-thread.ts',
                             ctor,
                             entrypoint: {
@@ -521,9 +521,9 @@ w = 'w' // new SharedWorker('./partial-line.ts')`,
                     ])
                     assert.deepEqual(registry.workers, [
                         {
-                            clientScript: 'pages/mega-performant-ui-thread.ts',
-                            dependentEntryPoint:
+                            clientEntrypoint:
                                 'pages/mega-performant-ui-thread.ts',
+                            clientScript: 'pages/mega-performant-ui-thread.ts',
                             ctor,
                             entrypoint: {
                                 in: 'pages/computational-wizardry.ts',
