@@ -14,7 +14,8 @@ suite('`dank build`', () => {
         suite('building website.json manifest', () => {
             test('is written to build dir', async () => {
                 const project = await createDank()
-                await project.build()
+                const result = await project.build()
+                result.assertSuccess()
                 const websiteJson = await readFile(
                     project.path('build/website.json'),
                     'utf8',
@@ -29,7 +30,8 @@ suite('`dank build`', () => {
         })
         test('rewriting hrefs', async () => {
             const project = await createDank()
-            await project.build()
+            const result = await project.build()
+            result.assertSuccess()
             assert.ok(
                 await readTest(
                     project.path('build', 'dist', 'index.html'),
@@ -61,7 +63,8 @@ suite('`dank build`', () => {
                     'pages/subdir/dank.ts': `console.log(document.body.style.background)`,
                 },
             })
-            await project.build()
+            const result = await project.build()
+            result.assertSuccess()
             assert.ok(
                 await readTest(
                     project.path('build', 'dist', 'index.html'),
@@ -92,7 +95,8 @@ suite('`dank build`', () => {
                         .replace(/\.\/dank\.css/, '../dank.css'),
                 },
             })
-            await project.build()
+            const result = await project.build()
+            result.assertSuccess()
             assert.ok(
                 await readTest(
                     project.path('build', 'dist', 'subdir', 'index.html'),
@@ -111,7 +115,8 @@ suite('`dank build`', () => {
 
         test('copying public assets to build/dist', async () => {
             const project = await createDank()
-            await project.build()
+            const result = await project.build()
+            result.assertSuccess()
             assert.ok(
                 await readTest(
                     project.path('build', 'dist', '.webmanifest'),
@@ -129,7 +134,8 @@ suite('`dank build`', () => {
                     'pages/computational-wizardry.ts': '',
                 },
             })
-            await project.build()
+            const result = await project.build()
+            result.assertSuccess()
             assert.ok(
                 await readTest(
                     project.path('build', 'metafiles', 'webpages.json'),
@@ -161,7 +167,8 @@ suite('`dank build`', () => {
                         'pages/list.ts': `import styles from './list.module.css'; export const makeList = () => { const ol = document.createElement('ol'); ol.classList.add(styles.list); return ol }`,
                     },
                 })
-                await project.build()
+                const result = await project.build()
+                result.assertSuccess()
                 assert.ok(
                     await readTest(
                         project.path('build/dist/index.html'),
@@ -184,19 +191,15 @@ suite('`dank build`', () => {
                 /\.\/dank\.ts/,
                 '../dank.ts',
             )
-            try {
-                await project.build()
-                assert.fail('build should have failed')
-            } catch (e) {}
+            const result = await project.build()
+            result.assertFailed()
         })
 
         test('page does not exist', async () => {
             const project = await createDank()
             await rm(project.path('pages/dank.html'))
-            try {
-                await project.build()
-                assert.fail('build should have failed')
-            } catch (e) {}
+            const result = await project.build()
+            result.assertFailed()
         })
     })
 
@@ -212,7 +215,8 @@ export default {
     }
 }
 `)
-            await project.build()
+            const result = await project.build()
+            result.assertSuccess()
             assert.equal(
                 await readFile(join(project.dir, 'test'), 'utf8'),
                 'test',
@@ -228,7 +232,8 @@ export default {
     afterBuild: null,
 }
 `)
-            await project.build()
+            const result = await project.build()
+            result.assertSuccess()
         })
 
         test('awaits async function', async () => {
@@ -243,7 +248,8 @@ export default {
     }
 }
 `)
-            await project.build()
+            const result = await project.build()
+            result.assertSuccess()
             assert.equal(
                 await readFile(join(project.dir, 'test'), 'utf8'),
                 'test',

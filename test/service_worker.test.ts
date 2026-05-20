@@ -20,7 +20,8 @@ export default {
     }),
 }
 `)
-            await project.build()
+            const result = await project.build()
+            result.assertSuccess()
             assert.ok(await project.readFromBuild('sw.js'))
             const manifest = await project.readManifest()
             assert.ok(manifest.files.includes('/sw.js'))
@@ -42,10 +43,8 @@ export default {
     }
     `)
                 await writeFile(project.path('public/sw.js'), '')
-                try {
-                    await project.build()
-                    assert.fail()
-                } catch {}
+                const result = await project.build()
+                result.assertFailed()
             })
 
             test('on service worker builder returning undefined', async () => {
@@ -60,10 +59,8 @@ export default {
     }
     `)
                 await writeFile(project.path('public/sw.js'), '')
-                try {
-                    await project.build()
-                    assert.fail()
-                } catch {}
+                const result = await project.build()
+                result.assertFailed()
             })
 
             suite('on service worker build invalid', () => {
@@ -92,10 +89,8 @@ export default {
                 },
             }
             `)
-                        try {
-                            await project.build()
-                            assert.fail()
-                        } catch {}
+                        const result = await project.build()
+                        result.assertFailed()
                     })
                 })
             })

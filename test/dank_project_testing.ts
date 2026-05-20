@@ -188,11 +188,28 @@ class DankTestProject {
         }
     }
 
-    async build(): Promise<void> {
-        await dankBuild(this.#dir)
-        if (DEBUG) {
+    // todo use spawn instead of exec to merge stdout and stderr
+    async build(): Promise<DankBuildResult> {
+        const result = await new Promise<DankBuildResult>((res, rej) => {
+            const command = exec(
+                `node ${DANK_BIN_PATH} build 2>&1`,
+                { cwd: this.#dir },
+                (err, stdout) => {
+                    if (DEBUG) console.log(stdout)
+                    if (typeof command.exitCode !== 'undefined') {
+                        res(new DankBuildResult(command.exitCode === 0, stdout))
+                    } else if (err) {
+                        rej(Error('`node lib/build.ts` error', { cause: err }))
+                    } else {
+                        rej(Error('`node lib/build.ts` error unknown'))
+                    }
+                },
+            )
+        })
+        if (DEBUG && result.success) {
             await this.debugPrintBuildDist()
         }
+        return result
     }
 
     async debugPrintBuildDist(): Promise<void> {
@@ -221,12 +238,17 @@ class DankTestProject {
         return join(this.#dir, ...p)
     }
 
-    async assertDistExists(path: string) {
-        // todo readBundleOutputFromBuild variant with stat instead of reading content
+    async assertDistExists(path: string, exists: boolean = true) {
+        let found = true
         try {
             await this.readBundleOutputFromBuild(path)
-        } catch (e) {
-            assert.fail()
+        } catch (ignore) {
+            found = false
+        }
+        if (exists) {
+            assert.ok(found, path + ' not found')
+        } else {
+            assert.ok(!found, path + ' found')
         }
     }
 
@@ -290,6 +312,43 @@ class DankTestProject {
 
     async servePreview(): Promise<DankServing> {
         return await this.serve(true)
+    }
+}
+
+// todo strip ansi from output
+export class DankBuildResult {
+    #success: boolean
+    #output: string
+
+    constructor(success: boolean, output: string) {
+        this.#success = success
+        this.#output = output
+    }
+
+    get success(): boolean {
+        return this.#success
+    }
+
+    assertFailed() {
+        assert.ok(!this.#success, '`dank build` succeeded')
+    }
+
+    assertSuccess() {
+        assert.ok(this.#success, '`dank build` did not succeed')
+    }
+
+    assertOutput(pattern: RegExp | string) {
+        if (typeof pattern === 'string') {
+            assert.ok(
+                this.#output.includes(pattern),
+                `expected output to include \`${pattern}\`, output: \`${this.#output.trim()}\``,
+            )
+        } else {
+            assert.ok(
+                pattern.test(this.#output),
+                `expected output to match pattern \`${pattern.source}\`, output: \`${this.#output.trim()}\``,
+            )
+        }
     }
 }
 
@@ -377,20 +436,6 @@ async function _npmInstall(dir: string) {
     })
 }
 
-async function dankBuild(cwd: string): Promise<void> {
-    await new Promise<void>((res, rej) => {
-        exec(`node ${DANK_BIN_PATH} build 2>&1`, { cwd }, (err, stdout) => {
-            if (err) {
-                if (DEBUG && stdout) console.log(stdout)
-                rej(Error('`node lib/build.ts` error', { cause: err }))
-            } else {
-                if (DEBUG) console.log(stdout)
-                res()
-            }
-        })
-    })
-}
-
 async function dankServe(
     cwd: string,
     preview: boolean = false,
@@ -435,7 +480,13 @@ export class DankServing extends EventEmitter<DankServingEvents> {
     }
 
     async assertFetchStatus(path: `/${string}`, status: number) {
-        await this.assertFetch(path, r => assert.equal(r.status, status))
+        await this.assertFetch(path, r =>
+            assert.equal(
+                r.status,
+                status,
+                `expected ${status} from \`${path}\``,
+            ),
+        )
     }
 
     async assertFetchText(

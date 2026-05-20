@@ -21,7 +21,8 @@ suite('HTML partials', () => {
                             '<meta property="og:title" content="Sweet blog post, bro">',
                     },
                 })
-                await project.build()
+                const result = await project.build()
+                result.assertSuccess()
                 assert.ok(
                     await readTest(
                         project.path('build', 'dist', 'index.html'),
@@ -43,7 +44,8 @@ suite('HTML partials', () => {
                         'pages/Notifications.css': `dialog[open] { display: none; }`,
                     },
                 })
-                await project.build()
+                const result = await project.build()
+                result.assertSuccess()
                 assert.ok(
                     await readTest(
                         project.path('build', 'dist', 'index.html'),
@@ -73,7 +75,8 @@ suite('HTML partials', () => {
                         'pages/notifications/Notifications.css': `dialog[open] { display: none; }`,
                     },
                 })
-                await project.build()
+                const result = await project.build()
+                result.assertSuccess()
                 assert.ok(
                     await readTest(
                         project.path('build', 'dist', 'index.html'),
@@ -101,10 +104,8 @@ suite('HTML partials', () => {
                         ),
                     },
                 })
-                try {
-                    await project.build()
-                    assert.fail('build should have failed')
-                } catch (e) {}
+                const result = await project.build()
+                result.assertFailed()
             })
 
             test('importing with absolute path', async () => {
@@ -116,10 +117,8 @@ suite('HTML partials', () => {
                         ),
                     },
                 })
-                try {
-                    await project.build()
-                    assert.fail('build should have failed')
-                } catch (e) {}
+                const result = await project.build()
+                result.assertFailed()
             })
 
             test('importing bad path', async () => {
@@ -131,10 +130,8 @@ suite('HTML partials', () => {
                         ),
                     },
                 })
-                try {
-                    await project.build()
-                    assert.fail('build should have failed')
-                } catch (e) {}
+                const result = await project.build()
+                result.assertFailed()
             })
 
             test('recursive partial', async () => {
@@ -147,10 +144,8 @@ suite('HTML partials', () => {
                         'pages/partial.html': `<p>Partial</p>\n<!-- {{ another_partial.html }} -->`,
                     },
                 })
-                try {
-                    await project.build()
-                    assert.fail('build should have failed')
-                } catch (e) {}
+                const result = await project.build()
+                result.assertFailed()
             })
         })
     })

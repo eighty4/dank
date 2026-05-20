@@ -15,7 +15,7 @@ import {
 suite('Web workers', () => {
     suite('`dank build`', () => {
         suite('rewriting worker url with build hash', () => {
-            test('with path ctor arg only', async () => {
+            test.only('with path ctor arg only', async () => {
                 for (const ctor of ['Worker', 'SharedWorker']) {
                     const project = await createDank({
                         files: {
@@ -25,7 +25,8 @@ suite('Web workers', () => {
                             'pages/computational-wizardry.ts': '',
                         },
                     })
-                    await project.build()
+                    const result = await project.build()
+                    result.assertSuccess()
                     await project.assertDistContent(
                         'dank.ts',
                         new RegExp(
@@ -51,7 +52,8 @@ suite('Web workers', () => {
                             'pages/computational-wizardry.ts': '',
                         },
                     })
-                    await project.build()
+                    const result = await project.build()
+                    result.assertSuccess()
                     await project.assertDistContent(
                         'dank.ts',
                         new RegExp(

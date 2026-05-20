@@ -14,6 +14,7 @@ import {
     resolveFlags as lookupDankFlags,
     type DankFlags as DankFlags,
 } from './flags.ts'
+import { DankError } from './errors.ts'
 
 const DEFAULT_DEV_PORT = 3000
 const DEFAULT_PREVIEW_PORT = 4000
@@ -53,7 +54,7 @@ export async function loadConfig(
     projectRootAbs: string,
 ): Promise<ResolvedDankConfig> {
     if (!isAbsolute(projectRootAbs)) {
-        throw Error()
+        throw Error('loadConfig() must be called with an absolute path')
     }
     const modulePath = resolve(projectRootAbs, DEFAULT_CONFIG_PATH)
     const dirs = await defaultProjectDirs(projectRootAbs)
@@ -243,12 +244,12 @@ function validateDankConfig(c: Partial<DankConfig>) {
 function validatePorts(c: Partial<DankConfig>) {
     if (c.port !== null && typeof c.port !== 'undefined') {
         if (typeof c.port !== 'number') {
-            throw Error('DankConfig.port must be a number')
+            throw new DankError('DankConfig.port must be a number')
         }
     }
     if (c.previewPort !== null && typeof c.previewPort !== 'undefined') {
         if (typeof c.previewPort !== 'number') {
-            throw Error('DankConfig.previewPort must be a number')
+            throw new DankError('DankConfig.previewPort must be a number')
         }
     }
 }
@@ -263,7 +264,9 @@ function validateBuildTag(buildTag: DankConfig['buildTag']) {
         case 'function':
             return
         default:
-            throw Error('DankConfig.buildTag must be a string or function')
+            throw new DankError(
+                'DankConfig.buildTag must be a string or function',
+            )
     }
 }
 
@@ -276,20 +279,20 @@ function validateServiceWorker(serviceWorker: DankConfig['serviceWorker']) {
         case 'function':
             return
         default:
-            throw Error('DankConfig.serviceWorker must be a function')
+            throw new DankError('DankConfig.serviceWorker must be a function')
     }
 }
 
 function validateEsbuildConfig(esbuild?: EsbuildConfig) {
     if (esbuild?.loaders !== null && typeof esbuild?.loaders !== 'undefined') {
         if (typeof esbuild.loaders !== 'object') {
-            throw Error(
+            throw new DankError(
                 'DankConfig.esbuild.loaders must be a map of extensions to esbuild loaders',
             )
         } else {
             for (const [ext, loader] of Object.entries(esbuild.loaders)) {
                 if (typeof loader !== 'string') {
-                    throw Error(
+                    throw new DankError(
                         `DankConfig.esbuild.loaders['${ext}'] must be a string of a loader name`,
                     )
                 }
@@ -298,14 +301,14 @@ function validateEsbuildConfig(esbuild?: EsbuildConfig) {
     }
     if (esbuild?.plugins !== null && typeof esbuild?.plugins !== 'undefined') {
         if (!Array.isArray(esbuild.plugins)) {
-            throw Error(
+            throw new DankError(
                 'DankConfig.esbuild.plugins must be an array of esbuild plugins',
             )
         }
     }
     if (esbuild?.port !== null && typeof esbuild?.port !== 'undefined') {
         if (typeof esbuild.port !== 'number') {
-            throw Error('DankConfig.esbuild.port must be a number')
+            throw new DankError('DankConfig.esbuild.port must be a number')
         }
     }
 }
@@ -316,7 +319,7 @@ function validatePages(pages?: DankConfig['pages']) {
         typeof pages === 'undefined' ||
         Object.keys(pages).length === 0
     ) {
-        throw Error('DankConfig.pages is required')
+        throw new DankError('DankConfig.pages is required')
     }
     for (const [urlPath, mapping] of Object.entries(pages)) {
         if (typeof mapping === 'string' && mapping.endsWith('.html')) {
@@ -326,7 +329,7 @@ function validatePages(pages?: DankConfig['pages']) {
             validatePageMapping(urlPath, mapping)
             continue
         }
-        throw Error(
+        throw new DankError(
             `DankConfig.pages['${urlPath}'] must configure an html file`,
         )
     }
@@ -336,14 +339,14 @@ function validateDevPages(devPages?: DankConfig['devPages']) {
     if (devPages) {
         for (const [urlPath, mapping] of Object.entries(devPages)) {
             if (!urlPath.startsWith('/__')) {
-                throw Error(
-                    `DankConfig.devPages['${urlPath}'] must start \`${urlPath}\` with a \`/__\` path prefix`,
+                throw new DankError(
+                    `DankConfig.devPages['${urlPath}'] url must start with \`/__\` path prefix`,
                 )
             }
             if (typeof mapping === 'string') {
                 if (!mapping.endsWith('.html')) {
-                    throw Error(
-                        `DankConfig.devPages['${urlPath}'] must configure an html file or DevPageMapping config`,
+                    throw new DankError(
+                        `DankConfig.devPages['${urlPath}'] mapped to \`${mapping}\` must be a path to an html file or DevPageMapping config`,
                     )
                 }
             } else if (typeof mapping === 'object') {
@@ -351,21 +354,21 @@ function validateDevPages(devPages?: DankConfig['devPages']) {
                     typeof mapping.label !== 'string' ||
                     !mapping.label.length
                 ) {
-                    throw Error(
-                        `DankConfig.devPages['${urlPath}'].label must declare a label`,
+                    throw new DankError(
+                        `DankConfig.devPages['${urlPath}'].label is required`,
                     )
                 }
                 if (
                     typeof mapping.webpage !== 'string' ||
                     !mapping.webpage.endsWith('.html')
                 ) {
-                    throw Error(
-                        `DankConfig.devPages['${urlPath}'].webpage must configure an html file`,
+                    throw new DankError(
+                        `DankConfig.devPages['${urlPath}'].webpage mapped to \`${mapping.webpage}\` must be a path to an html file`,
                     )
                 }
             } else {
-                throw Error(
-                    `DankConfig.devPages['${urlPath}'] must be a DevPageMapping config with \`label\` and \`webpage\` values`,
+                throw new DankError(
+                    `DankConfig.devPages['${urlPath}'] must be a path to an html file or DevPageMapping config`,
                 )
             }
         }
@@ -378,7 +381,7 @@ function validatePageMapping(urlPath: string, mapping: PageMapping) {
         typeof mapping.webpage !== 'string' ||
         !mapping.webpage.endsWith('.html')
     ) {
-        throw Error(
+        throw new DankError(
             `DankConfig.pages['${urlPath}'].webpage must configure an html file`,
         )
     }
@@ -391,7 +394,9 @@ function validatePageMapping(urlPath: string, mapping: PageMapping) {
     ) {
         return
     }
-    throw Error(`DankConfig.pages['${urlPath}'].pattern must be a RegExp`)
+    throw new DankError(
+        `DankConfig.pages['${urlPath}'].pattern must be a RegExp`,
+    )
 }
 
 function validateDevServices(services: DankConfig['services']) {
@@ -399,33 +404,33 @@ function validateDevServices(services: DankConfig['services']) {
         return
     }
     if (!Array.isArray(services)) {
-        throw Error(`DankConfig.services must be an array`)
+        throw new DankError(`DankConfig.services must be an array`)
     }
     for (let i = 0; i < services.length; i++) {
         const s = services[i]
         if (s.command === null || typeof s.command === 'undefined') {
-            throw Error(`DankConfig.services[${i}].command is required`)
+            throw new DankError(`DankConfig.services[${i}].command is required`)
         } else if (typeof s.command !== 'string' || s.command.length === 0) {
-            throw Error(
+            throw new DankError(
                 `DankConfig.services[${i}].command must be a non-empty string`,
             )
         }
         if (s.cwd !== null && typeof s.cwd !== 'undefined') {
             if (typeof s.cwd !== 'string' || s.cwd.trim().length === 0) {
-                throw Error(
+                throw new DankError(
                     `DankConfig.services[${i}].cwd must be a non-empty string`,
                 )
             }
         }
         if (s.env !== null && typeof s.env !== 'undefined') {
             if (typeof s.env !== 'object') {
-                throw Error(
+                throw new DankError(
                     `DankConfig.services[${i}].env must be an env variable map`,
                 )
             }
             for (const [k, v] of Object.entries(s.env)) {
                 if (typeof v !== 'string') {
-                    throw Error(
+                    throw new DankError(
                         `DankConfig.services[${i}].env[${k}] must be a string`,
                     )
                 }
@@ -433,7 +438,7 @@ function validateDevServices(services: DankConfig['services']) {
         }
         if (s.http !== null && typeof s.http !== 'undefined') {
             if (typeof s.http.port !== 'number') {
-                throw Error(
+                throw new DankError(
                     `DankConfig.services[${i}].http.port must be a number`,
                 )
             }
@@ -446,7 +451,7 @@ function validateAfterBuild(afterBuild: DankConfig['afterBuild']) {
         return
     }
     if (typeof afterBuild !== 'function') {
-        throw Error(`DankConfig.afterBuild must be a function`)
+        throw new DankError(`DankConfig.afterBuild must be a function`)
     }
 }
 
