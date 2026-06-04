@@ -3,6 +3,7 @@ import { createBuildTag } from './build_tag.ts'
 import type {
     DankConfig,
     DankDetails,
+    DankMode,
     DevPageMapping,
     EsbuildConfig,
     PageMapping,
@@ -28,7 +29,7 @@ export type ResolvedDankConfig = {
     // static config that does not hot reload during `dank serve`
     get dirs(): Readonly<DankDirectories>
     get flags(): Readonly<Omit<DankFlags, 'dankPort' | 'esbuildPort'>>
-    get mode(): 'build' | 'serve'
+    get mode(): DankMode
 
     // reloadable from `dank.config.ts` with `reload()`
     get dankPort(): number
@@ -44,13 +45,17 @@ export type ResolvedDankConfig = {
 
     buildTag(): Promise<string>
 
+    isBuildMode(): boolean
+    isPreviewMode(): boolean
+    isServeMode(): boolean
+
     pageMappings(): Record<`/${string}`, PageMapping>
 
     reload(): Promise<void>
 }
 
 export async function loadConfig(
-    mode: 'build' | 'serve',
+    mode: DankMode,
     projectRootAbs: string,
 ): Promise<ResolvedDankConfig> {
     if (!isAbsolute(projectRootAbs)) {
@@ -75,7 +80,7 @@ class DankConfigInternal implements ResolvedDankConfig {
     #buildTagBuilder: DankConfig['buildTag']
     #dirs: Readonly<DankDirectories>
     #flags: Readonly<DankFlags>
-    #mode: 'build' | 'serve'
+    #mode: DankMode
     #modulePath: string
     #serviceWorkerBuilder?: ServiceWorkerBuilder
     #afterBuild: DankConfig['afterBuild']
@@ -87,11 +92,7 @@ class DankConfigInternal implements ResolvedDankConfig {
     #devPages: Readonly<ResolvedDankConfig['devPages']> = {}
     #services: Readonly<DankConfig['services']>
 
-    constructor(
-        mode: 'build' | 'serve',
-        modulePath: string,
-        dirs: DankDirectories,
-    ) {
+    constructor(mode: DankMode, modulePath: string, dirs: DankDirectories) {
         this.#dirs = dirs
         this.#flags = lookupDankFlags(mode)
         this.#mode = mode
@@ -118,7 +119,7 @@ class DankConfigInternal implements ResolvedDankConfig {
         return this.#flags
     }
 
-    get mode(): 'build' | 'serve' {
+    get mode(): DankMode {
         return this.#mode
     }
 
@@ -153,6 +154,18 @@ class DankConfigInternal implements ResolvedDankConfig {
         return this.#buildTag
     }
 
+    isBuildMode(): boolean {
+        return this.#mode === 'build'
+    }
+
+    isPreviewMode(): boolean {
+        return this.#mode === 'preview'
+    }
+
+    isServeMode(): boolean {
+        return this.#mode === 'serve'
+    }
+
     pageMappings(): ResolvedDankConfig['pages'] {
         if (this.#mode === 'serve') {
             return {
@@ -171,7 +184,7 @@ class DankConfigInternal implements ResolvedDankConfig {
         )
         this.#buildTag = null
         this.#buildTagBuilder = userConfig.buildTag
-        this.#dankPort = resolveDankPort(this.#flags, userConfig)
+        this.#dankPort = resolveDankPort(this.#mode, this.#flags, userConfig)
         this.#esbuildPort = resolveEsbuildPort(this.#flags, userConfig)
         this.#esbuild = Object.freeze(userConfig.esbuild)
         this.#pages = Object.freeze(normalizePages(userConfig.pages))
@@ -182,10 +195,14 @@ class DankConfigInternal implements ResolvedDankConfig {
     }
 }
 
-function resolveDankPort(flags: DankFlags, userConfig: DankConfig): number {
+function resolveDankPort(
+    mode: DankMode,
+    flags: DankFlags,
+    userConfig: DankConfig,
+): number {
     return (
         flags.dankPort ||
-        (flags.preview
+        (mode === 'preview'
             ? userConfig.previewPort || userConfig.port || DEFAULT_PREVIEW_PORT
             : userConfig.port || DEFAULT_DEV_PORT)
     )
@@ -208,10 +225,7 @@ async function resolveConfig(
     return c as DankConfig
 }
 
-function resolveDankDetails(
-    mode: 'build' | 'serve',
-    flags: DankFlags,
-): DankDetails {
+function resolveDankDetails(mode: DankMode, flags: DankFlags): DankDetails {
     return {
         dev: !flags.production,
         production: flags.production,

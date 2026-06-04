@@ -506,10 +506,7 @@ export class DankServing extends EventEmitter<DankServingEvents> {
             DANK_PORT: `${this.dankPort}`,
             ESBUILD_PORT: `${this.esbuildPort}`,
         }
-        const args = [DANK_BIN_PATH, 'serve']
-        if (this.#preview) {
-            args.push('--', '--preview')
-        }
+        const args = [DANK_BIN_PATH, this.#preview ? 'preview' : 'serve']
         // do not spawn `npm run dev` bc on windows process.kill an npm
         // process will not delegate shutdown to `dank serve` process
         this.#process = spawn('node', args, { cwd: this.#cwd, env })

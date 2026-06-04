@@ -12,7 +12,7 @@ import { Readable } from 'node:stream'
 import mime from 'mime'
 import type { WebsiteManifest } from './dank.ts'
 import type { DankDirectories } from './dirs.ts'
-import type { DankFlags } from './flags.ts'
+import type { ResolvedDankConfig } from './config.ts'
 import type { UrlRewrite, WebsiteRegistry } from './registry.ts'
 import type { DevServices } from './services.ts'
 
@@ -28,14 +28,12 @@ export type FrontendFetcher = (
 ) => void
 
 export function startWebServer(
-    port: number,
-    flags: DankFlags,
-    dirs: DankDirectories,
+    c: ResolvedDankConfig,
     urlRewriteProvider: UrlRewriteProvider,
     frontendFetcher: FrontendFetcher,
     devServices: DevServices,
 ) {
-    const serverAddress = 'http://localhost:' + port
+    const serverAddress = 'http://localhost:' + c.dankPort
     const handler = (req: IncomingMessage, res: ServerResponse) => {
         if (!req.url || !req.method) {
             res.end()
@@ -47,21 +45,20 @@ export function startWebServer(
                     req,
                     url,
                     headers,
+                    c,
                     devServices,
-                    flags,
-                    dirs,
                     urlRewriteProvider,
                     res,
                 ),
             )
         }
     }
-    createServer(flags.logHttp ? createLogWrapper(handler) : handler).listen(
-        port,
+    createServer(c.flags.logHttp ? createLogWrapper(handler) : handler).listen(
+        c.dankPort,
     )
     console.log(
-        flags.preview ? 'preview' : 'dev',
-        `server is live at http://127.0.0.1:${port}`,
+        c.isPreviewMode() ? 'preview' : 'dev',
+        `server is live at http://127.0.0.1:${c.dankPort}`,
     )
 }
 
@@ -69,16 +66,14 @@ async function onNotFound(
     req: IncomingMessage,
     url: URL,
     headers: Headers,
+    c: ResolvedDankConfig,
     devServices: DevServices,
-    flags: DankFlags,
-    dirs: DankDirectories,
     urlRewriteProvider: UrlRewriteProvider,
     res: ServerResponse,
 ) {
     if (req.method === 'GET') {
         const urlRewrite = tryUrlRewrites(
-            flags,
-            dirs,
+            c,
             urlRewriteProvider.urlRewrites,
             url,
         )
@@ -110,8 +105,7 @@ async function sendFetchResponse(res: ServerResponse, fetchResponse: Response) {
 }
 
 function tryUrlRewrites(
-    flags: DankFlags,
-    dirs: DankDirectories,
+    c: ResolvedDankConfig,
     urlRewrites: Array<UrlRewrite>,
     url: URL,
 ): string | null {
@@ -120,7 +114,7 @@ function tryUrlRewrites(
     )
     return urlRewrite
         ? join(
-              flags.preview ? dirs.buildDist : dirs.buildWatch,
+              c.isPreviewMode() ? c.dirs.buildDist : c.dirs.buildWatch,
               urlRewrite.url,
               'index.html',
           )

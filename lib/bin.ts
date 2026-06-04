@@ -2,6 +2,7 @@
 
 import { green, red } from './ansi.ts'
 import { buildWebsite } from './build.ts'
+import type { DankMode } from './dank.ts'
 import {
     DankError,
     isEsbuildBuildFailure,
@@ -9,23 +10,32 @@ import {
 } from './errors.ts'
 import { serveWebsite } from './serve.ts'
 
-function printHelp(task?: 'build' | 'serve'): never {
-    if (!task || task === 'build') {
+function printHelp(mode?: DankMode): never {
+    const showMode = (m: DankMode) => !mode || mode === m
+    const SHOW_BUILD = showMode('build')
+    const SHOW_SERVE = showMode('serve')
+    const SHOW_PREVIEW = showMode('preview')
+    if (SHOW_BUILD) {
         console.log('dank build [--service-worker]')
     }
-    if (!task || task === 'serve') {
+    if (SHOW_SERVE) {
         console.log(
             'dank serve [--log-http] [--minify] [--production] [--service-worker]',
         )
     }
+    if (SHOW_PREVIEW) {
+        console.log('dank preview [--log-http] [--service-worker]')
+    }
     console.log('\nOPTIONS:')
-    if (!task || task === 'serve') {
+    if (SHOW_PREVIEW || SHOW_SERVE) {
         console.log('  --log-http        print access logs')
+    }
+    if (SHOW_SERVE) {
         console.log('  --minify          minify sources')
         console.log('  --production      build for production release')
     }
     console.log('  --service-worker  build service worker')
-    if (task) {
+    if (mode) {
         console.log('\nuse `dank -h` for details on all commands')
     }
     process.exit(1)
@@ -42,9 +52,9 @@ const args = (function collectProgramArgs(): Array<string> {
     }
 })()
 
-const task: 'build' | 'serve' = (function resolveTask() {
+const mode: DankMode = (function resolveMode() {
     const showHelp = args.some(arg => arg === '-h' || arg === '--help')
-    const task = (() => {
+    const mode = (() => {
         while (true) {
             const shifted = args.shift()
             switch (shifted) {
@@ -53,6 +63,8 @@ const task: 'build' | 'serve' = (function resolveTask() {
                     break
                 case 'build':
                     return 'build'
+                case 'preview':
+                    return 'preview'
                 case 'dev':
                 case 'serve':
                     return 'serve'
@@ -68,19 +80,20 @@ const task: 'build' | 'serve' = (function resolveTask() {
         }
     })()
     if (showHelp) {
-        printHelp(task)
+        printHelp(mode)
     }
-    return task
+    return mode
 })()
 
 try {
-    switch (task) {
+    switch (mode) {
         case 'build':
             await buildWebsite()
             console.log(green('done'))
             process.exit(0)
         case 'serve':
-            await serveWebsite()
+        case 'preview':
+            await serveWebsite(mode)
     }
 } catch (e: unknown) {
     printError(e)

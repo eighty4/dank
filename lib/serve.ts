@@ -19,10 +19,10 @@ import { watch } from './watch.ts'
 
 let c: ResolvedDankConfig
 
-export async function serveWebsite(): Promise<never> {
-    c = await loadConfig('serve', process.cwd())
+export async function serveWebsite(mode: 'preview' | 'serve'): Promise<never> {
+    c = await loadConfig(mode, process.cwd())
     await rm(c.dirs.buildRoot, { force: true, recursive: true })
-    if (c.flags.preview) {
+    if (c.isPreviewMode()) {
         await startPreviewMode()
     } else {
         await startDevMode()
@@ -44,9 +44,7 @@ async function startPreviewMode() {
         })
         .filter(mapping => mapping !== null)
     startWebServer(
-        c.dankPort,
-        c.flags,
-        c.dirs,
+        c,
         { urlRewrites } satisfies UrlRewriteProvider,
         frontend,
         devServices,
@@ -54,9 +52,7 @@ async function startPreviewMode() {
     const controller = new AbortController()
     watch('dank.config.ts', controller.signal, async filename => {
         console.log(filename, 'was updated!')
-        console.log(
-            'config updates are not hot reloaded during `dank serve --preview`',
-        )
+        console.log('config updates are not hot reloaded during `dank preview`')
         console.log('restart DANK to reload configuration')
         controller.abort()
     })
@@ -172,7 +168,7 @@ async function startDevMode() {
 
     const frontend = createDevServeFilesFetcher(c.esbuildPort, c.dirs, registry)
     const devServices = launchDevServices()
-    startWebServer(c.dankPort, c.flags, c.dirs, registry, frontend, devServices)
+    startWebServer(c, registry, frontend, devServices)
 }
 
 async function startEsbuildWatch(

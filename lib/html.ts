@@ -551,7 +551,7 @@ class ClientJS {
     static #instance: ClientJS | null = null
 
     static initialize(c: ResolvedDankConfig): ClientJS | null {
-        if (c.mode === 'build' || c.flags.preview) {
+        if (!c.isServeMode()) {
             return null
         } else if (!ClientJS.#instance) {
             ClientJS.#instance = new ClientJS(c.esbuildPort)

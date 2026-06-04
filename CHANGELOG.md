@@ -4,6 +4,8 @@
 
 ### Added
 
+- `dank preview` added to preview a production build, replacing
+  the `--preview` flag for `dank serve`
 - CSS output from `esbuild.build` when bundling a JS entrypoint
   with CSS imports is now supported, appending the CSS bundle
   with a `<link rel="stylesheet">` to the appropriate HTML pages

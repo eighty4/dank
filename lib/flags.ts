@@ -3,24 +3,22 @@ export type DankFlags = {
     esbuildPort?: number
     logHttp: boolean
     minify: boolean
-    preview: boolean
     production: boolean
 }
 
-export function resolveFlags(mode: 'build' | 'serve'): Readonly<DankFlags> {
+export function resolveFlags(
+    mode: 'build' | 'preview' | 'serve',
+): Readonly<DankFlags> {
+    const withHttp = mode !== 'build'
+    const isDev = mode === 'serve'
     return Object.freeze({
-        dankPort: mode === 'serve' ? resolveDankPort() : undefined,
-        esbuildPort: mode === 'serve' ? resolveEsbuildPort() : undefined,
-        logHttp: mode === 'serve' && willLogHttp(),
-        minify: mode === 'build' || willMinify(),
-        preview: mode === 'serve' && isPreviewBuild(),
-        production: mode === 'build' || isProductionBuild(),
+        dankPort: withHttp ? resolveDankPort() : undefined,
+        esbuildPort: withHttp ? resolveEsbuildPort() : undefined,
+        logHttp: withHttp && willLogHttp(),
+        minify: !isDev || willMinify(),
+        production: !isDev || isProductionBuild(),
     })
 }
-
-// `dank serve` will pre-bundle and use service worker
-const isPreviewBuild = () =>
-    process.env.PREVIEW === 'true' || process.argv.includes('--preview')
 
 // `dank build` will minify sources and append git release tag to build tag
 // `dank serve` will pre-bundle with service worker and minify

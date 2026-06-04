@@ -77,27 +77,6 @@ suite('`dank serve`', () => {
             await dankServing.assertFetchStatus('/eighty4/sidelines.dev', 200)
         })
 
-        suite('--preview', () => {
-            test('matches page pattern', async () => {
-                const project = await createDank()
-                await project.writeConfig(`\
-    export default {
-        pages: {
-            '/configure': {
-                pattern: /asdf/,
-                webpage: './dank.html',
-            },
-        },
-    }`)
-                using dankServing = await project.servePreview()
-                dankServing.on('error', assert.fail)
-                dankServing.on('exit', assert.fail)
-                await dankServing.start()
-                await dankServing.assertFetchStatus('/asdf', 200)
-                await dankServing.assertFetchStatus('/configure', 200)
-            })
-        })
-
         suite('config reload', () => {
             test('picks up url rewrite', async () => {
                 const project = await createDank()

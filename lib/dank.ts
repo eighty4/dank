@@ -1,5 +1,7 @@
 import type { Plugin as EsbuildPlugin } from 'esbuild'
 
+export type DankMode = 'build' | 'preview' | 'serve'
+
 export type DankConfig = {
     // used for service worker caching
     buildTag?: string | BuildTagBuilder
@@ -16,17 +18,17 @@ export type DankConfig = {
     devPages?: Record<`/__${string}`, `${string}.html` | DevPageMapping>
 
     // port of `dank serve` frontend dev server
-    // used for `dan serve --preview` if previewPort not specified
+    // used for `dank preview` if previewPort not specified
     port?: number
 
-    // port used for `dank serve --preview` frontend dev server
+    // port used for `dank preview` frontend dev server
     previewPort?: number
 
     // dev services launched during `dank serve`
     services?: Array<DevService>
 
-    // generate a service worker for `dank build --production`
-    // and when previewing with `dank serve --preview`
+    // generate a service worker with `dank build --service-worker`
+    // and when previewing with `dank preview --service-worker`
     serviceWorker?: ServiceWorkerBuilder
 
     afterBuild?: AfterBuild
@@ -91,7 +93,7 @@ export type EsbuildLoader =
 export type DankDetails = {
     dev: boolean
     production: boolean
-    mode: 'build' | 'serve'
+    mode: DankMode
 }
 
 export type DankConfigFunction = (

@@ -16,9 +16,9 @@ pnpm create dank --out-dir www
 - TypeScript supported with `<script src="./dank.ts">`
 - Code splitting via `esbuild` bundler across all webpages
 - Hashes added to all bundled assets for efficient cache utilization
-- `dank serve` updates CSS in real-time (hot-reloading)
-- `dank serve` launches development processes and merges their stdio
-- `dank serve --preview` builds the website and serves the output from `dist`
+- `dank serve` hot-reloads CSS in the browser
+- `dank serve` launches dev services to streamline your workflow
+- `dank preview` serves a production build for preview
 - `dank build` minifies and tree-shakes with `esbuild`
 - DANK's codebase is so tiny you can read it all in 20 minutes
 

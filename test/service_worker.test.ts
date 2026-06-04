@@ -121,7 +121,7 @@ export default {
         })
     })
 
-    suite('`dank serve --preview`', () => {
+    suite('`dank preview`', () => {
         test('serves service worker and includes in manifest', async () => {
             const project = await createDank()
             project.writeConfig(`\
