@@ -160,7 +160,7 @@ export default defineConfig({
     })
 
     suite('`dank serve`', () => {
-        test.only('serves dev pages', async () => {
+        test('serves dev pages', async () => {
             const project = await createDank({
                 files: {
                     'pages/dev.html': '<script src="./dev.ts"></script>',

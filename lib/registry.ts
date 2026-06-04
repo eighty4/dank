@@ -212,6 +212,10 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         return [...htmlPages, ...entrypoints, ...chunks, ...assets]
     }
 
+    hasWebWorkers(): boolean {
+        return !!this.#workers?.length
+    }
+
     mappedHref(lookup: string): string {
         const found = this.#entrypointHrefs[lookup]
         if (found) {

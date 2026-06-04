@@ -1,4 +1,4 @@
-import type { BuildFailure, Message } from 'esbuild'
+import type { BuildFailure, Location, Message } from 'esbuild'
 import { bold, green, red, whiteOnRed, whiteOnYellow, yellow } from './ansi.ts'
 
 // throw for user facing errors
@@ -22,7 +22,9 @@ export function isEsbuildBuildFailure(e: unknown): e is BuildFailure {
     )
 }
 
-export function printEsbuildBuildFailureMessages(e: BuildFailure) {
+export function printEsbuildBuildFailureMessages(
+    e: Pick<BuildFailure, 'errors' | 'warnings'>,
+) {
     if (e.warnings.length) {
         printEsbuildWarnings(e.warnings)
     }
@@ -52,16 +54,27 @@ function labelForWarnings(): string {
 function printEsbuildMessage(label: string, message: Message) {
     console.log(label, bold(message.text))
     if (message.location) {
-        const { file, line, column, lineText, length } = message.location
-        console.log(`\n    ${file}:${line}:${column}:`)
-        const lineBeforeHighlight = lineText.substring(0, column)
-        const lineHighlight = lineText.substring(column, column + length)
-        const lineAfterHighlight = lineText.substring(column + length)
-        console.log(
-            `${(line + ' ').padStart(8)}│ ${lineBeforeHighlight}${green(lineHighlight)}${lineAfterHighlight}`,
-        )
-        console.log(
-            `${' '.padStart(8)}╵ ${' '.padStart(lineBeforeHighlight.length)}${green(''.padStart(lineHighlight.length, '~'))}\n`,
-        )
+        printEsbuildLocation(message.location)
     }
+    for (const note of message.notes) {
+        console.log(`\n  ${note.text}`)
+        if (note.location) {
+            printEsbuildLocation(note.location)
+        }
+    }
+    console.log()
+}
+
+function printEsbuildLocation(location: Location) {
+    const { file, line, column, lineText, length } = location
+    console.log(`\n    ${file}:${line}:${column}:`)
+    const lineBeforeHighlight = lineText.substring(0, column)
+    const lineHighlight = lineText.substring(column, column + length)
+    const lineAfterHighlight = lineText.substring(column + length)
+    console.log(
+        `${(line + ' ').padStart(8)}│ ${lineBeforeHighlight}${green(lineHighlight)}${lineAfterHighlight}`,
+    )
+    console.log(
+        `${' '.padStart(8)}╵ ${' '.padStart(lineBeforeHighlight.length)}${green(''.padStart(lineHighlight.length, '~'))}`,
+    )
 }

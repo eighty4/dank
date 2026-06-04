@@ -17,6 +17,7 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
+import { stripVTControlCharacters } from 'node:util'
 import { waitForEsbuildServe } from './esbuild_events_testing.ts'
 import { getAvailablePort, waitForPort } from './ports.ts'
 import { loadConfig, type ResolvedDankConfig } from '../lib/config.ts'
@@ -322,7 +323,7 @@ export class DankBuildResult {
 
     constructor(success: boolean, output: string) {
         this.#success = success
-        this.#output = output
+        this.#output = stripVTControlCharacters(output)
     }
 
     get success(): boolean {
@@ -341,12 +342,12 @@ export class DankBuildResult {
         if (typeof pattern === 'string') {
             assert.ok(
                 this.#output.includes(pattern),
-                `expected output to include \`${pattern}\`, output: \`${this.#output.trim()}\``,
+                `expected output to include \`${pattern}\`\n\n~~~ output ~~~\n\n${this.#output.trim()}\n\n~~~ /output ~~~\n`,
             )
         } else {
             assert.ok(
                 pattern.test(this.#output),
-                `expected output to match pattern \`${pattern.source}\`, output: \`${this.#output.trim()}\``,
+                `expected output to match pattern\n\nexpected: \`${pattern.source}\`\n\n~~~ output ~~~\n\n${this.#output.trim()}\n\n~~~ /output ~~~\n`,
             )
         }
     }

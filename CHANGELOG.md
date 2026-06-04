@@ -15,6 +15,9 @@
   build by configuring `afterBuild` which will be called with
   `AfterBuildArgs` that includes `WebsiteManifest`
 - Builds and CICD verify Linux, MacOS and Windows compat
+- Enhancing `esbuild.BuildFailure` messages using DANK `WebsiteRegistry`
+  context, so an unresolved Worker entrypoint erroring will include relevant
+  help text and source location
 
 ### Changed
 

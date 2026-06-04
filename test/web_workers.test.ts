@@ -15,7 +15,7 @@ import {
 suite('Web workers', () => {
     suite('`dank build`', () => {
         suite('rewriting worker url with build hash', () => {
-            test.only('with path ctor arg only', async () => {
+            test('with path ctor arg only', async () => {
                 for (const ctor of ['Worker', 'SharedWorker']) {
                     const project = await createDank({
                         files: {
@@ -63,6 +63,29 @@ suite('Web workers', () => {
                     )
                     await project.assertDistExists(
                         '.lib/pages/computational-wizardry.ts',
+                    )
+                }
+            })
+        })
+
+        suite('errors', () => {
+            test('unresolved worker ctor entrypoint', async () => {
+                for (const ctor of ['Worker', 'SharedWorker']) {
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `new ${ctor}('./notworker.ts')`,
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertFailed()
+                    result.assertOutput(
+                        `Could not find ${ctor} entrypoint "pages/notworker.ts"`,
+                    )
+                    result.assertOutput(
+                        `The ${ctor} entrypoint was found in "pages/dank.ts":`,
+                    )
+                    result.assertOutput(
+                        `pages/dank.ts:1:${'new ('.length + ctor.length}:`,
                     )
                 }
             })

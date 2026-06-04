@@ -46,12 +46,9 @@ async function buildWebpages(
     await Promise.all(registry.htmlEntrypoints.map(html => html.process()))
     await esbuildWebpages(registry, define, registry.webpageEntryPoints)
 
-    // todo recursively build workers on building workers that create workers
-    const workerEntryPoints = registry.workerEntryPoints
-    if (workerEntryPoints?.length) {
-        await esbuildWorkers(registry, define, workerEntryPoints)
+    if (await esbuildWorkers(registry, define)) {
+        await rewriteWorkerUrls(c.dirs, registry)
     }
-    await rewriteWorkerUrls(c.dirs, registry)
 
     // write out html output with rewritten hrefs
     await Promise.all(

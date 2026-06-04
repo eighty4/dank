@@ -1,11 +1,13 @@
 import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import {
     type BuildContext,
+    type BuildFailure,
     type BuildOptions,
     type BuildResult,
     type Location,
+    type Message,
     type Metafile,
-    type OnLoadArgs,
     type PartialMessage,
     type Plugin,
     type PluginBuild,
@@ -13,9 +15,17 @@ import {
     context,
 } from 'esbuild'
 import type { DefineDankGlobal } from './define.ts'
-import type { WebsiteRegistry, WorkerBuildRegistry } from './registry.ts'
-import { printEsbuildWarnings } from './errors.ts'
 import type { DankDirectories } from './dirs.ts'
+import {
+    isEsbuildBuildFailure,
+    printEsbuildBuildFailureMessages,
+    printEsbuildWarnings,
+} from './errors.ts'
+import type {
+    WebsiteRegistry,
+    WorkerBuildRegistry,
+    WorkerManifest,
+} from './registry.ts'
 
 export type EsbuildEntrypoint = { in: string; out: string }
 
@@ -31,7 +41,6 @@ export async function esbuildDevContext(
         entryPoints: mapEntryPointPaths(entryPoints),
         outdir: r.config.dirs.buildDist,
         ...commonBuildOptions(r),
-        logLevel: 'warning',
         plugins: esbuildPlugins(r, wr, true),
         splitting: false,
         write: false,
@@ -63,26 +72,38 @@ export async function esbuildWebpages(
 export async function esbuildWorkers(
     r: WebsiteRegistry,
     define: DefineDankGlobal,
-    entryPoints: Array<EsbuildEntrypoint>,
-): Promise<void> {
+): Promise<boolean> {
+    if (!r.hasWebWorkers()) {
+        return false
+    }
     const wr = r.workerRegistry()
-    const { warnings, metafile } = await build({
-        define,
-        entryNames: '[dir]/[name]-[hash]',
-        entryPoints: mapEntryPointPaths(entryPoints),
-        outdir: r.config.dirs.buildDist,
-        ...commonBuildOptions(r),
-        plugins: esbuildPlugins(r, wr),
-        splitting: false,
-        metafile: true,
-        write: true,
-        assetNames: 'assets/[name]-[hash]',
-    })
+    let result
+    try {
+        result = await build({
+            define,
+            entryNames: '[dir]/[name]-[hash]',
+            entryPoints: mapEntryPointPaths(r.workerEntryPoints!),
+            outdir: r.config.dirs.buildDist,
+            ...commonBuildOptions(r),
+            plugins: esbuildPlugins(r, wr),
+            splitting: false,
+            metafile: true,
+            write: true,
+            assetNames: 'assets/[name]-[hash]',
+        })
+    } catch (e) {
+        if (isEsbuildBuildFailure(e)) {
+            await enhanceEsbuildBuildFailure(r, e)
+        }
+        throw e
+    }
+    const { warnings, metafile } = result
     if (warnings.length) {
         printEsbuildWarnings(warnings)
     }
     await writeMetafile(r.config.dirs, 'workers.json', metafile)
     r.mergeBuiltBundles(metafile)
+    return true
 }
 
 async function writeMetafile(
@@ -119,17 +140,23 @@ function defaultLoaders(): BuildOptions['loader'] {
     }
 }
 
+// `dank serve` uses `devCtx` flag to merge result on each build
+// `dank build` merges after `esbuild.build` completes without error
 function esbuildPlugins(
     r: WebsiteRegistry,
     wr: WorkerBuildRegistry,
     devCtx: boolean = false,
 ): NonNullable<BuildOptions['plugins']> {
     const p = devCtx
-        ? workersPlugin(wr, (build, wr) => r.mergeDevContext(build, wr))
-        : workersPlugin(wr)
-    return r.config.esbuild?.plugins?.length
-        ? [p, ...r.config.esbuild?.plugins]
-        : [p]
+        ? [
+              workersPlugin(wr, (build, wr) => r.mergeDevContext(build, wr)),
+              errorsPlugin(r),
+          ]
+        : [workersPlugin(wr)]
+    if (r.config.esbuild?.plugins?.length) {
+        p.push(...r.config.esbuild.plugins)
+    }
+    return p
 }
 
 // esbuild will append the .js or .css to output filenames
@@ -170,10 +197,11 @@ export function workersPlugin(
                         if (!errors) errors = []
                         errors.push(
                             invalidWorkerUrlCtorArg(
-                                locationFromMatch(
-                                    args,
+                                buildMessageLocation(
+                                    args.path,
                                     contents,
-                                    workerCtorMatch,
+                                    workerCtorMatch.index,
+                                    workerCtorMatch[0].length,
                                 ),
                                 workerCtorMatch,
                             ),
@@ -202,10 +230,11 @@ export function workersPlugin(
                         if (!errors) errors = []
                         errors.push(
                             outofboundsWorkerUrlCtorArg(
-                                locationFromMatch(
-                                    args,
+                                buildMessageLocation(
+                                    args.path,
                                     contents,
-                                    workerCtorMatch,
+                                    workerCtorMatch.index,
+                                    workerCtorMatch[0].length,
                                 ),
                                 workerCtorMatch,
                             ),
@@ -275,31 +304,33 @@ function isIndexCommented(contents: string, index: number) {
     return blockCommented
 }
 
-function locationFromMatch(
-    args: OnLoadArgs,
+function buildMessageLocation(
+    file: string,
     contents: string,
-    match: RegExpExecArray,
-): Partial<Location> {
-    const preamble = contents.substring(0, match.index)
-    const line = preamble.match(/\n/g)?.length || 0
-    let lineIndex = preamble.lastIndexOf('\n')
-    lineIndex = lineIndex === -1 ? 0 : lineIndex + 1
-    const column = preamble.length - lineIndex
-    const lineText = contents.substring(
-        lineIndex,
-        contents.indexOf('\n', lineIndex) || contents.length,
-    )
+    matchIndex: number,
+    matchLength: number,
+    suggestion: string = '',
+): Location {
+    const preamble = contents.substring(0, matchIndex)
+    let lineStart = preamble.lastIndexOf('\n')
+    lineStart = lineStart === -1 ? 0 : lineStart + 1
+    const lineEnd = contents.indexOf('\n', lineStart)
     return {
-        lineText,
-        line,
-        column,
-        file: args.path,
-        length: match[0].length,
+        namespace: 'file',
+        suggestion,
+        file,
+        lineText: contents.substring(
+            lineStart,
+            lineEnd === -1 ? contents.length : lineEnd,
+        ),
+        line: preamble.match(/\n/g)?.length || 1,
+        column: preamble.length - lineStart,
+        length: matchLength,
     }
 }
 
 function outofboundsWorkerUrlCtorArg(
-    location: Partial<Location>,
+    location: Location,
     workerCtorMatch: RegExpExecArray,
 ): PartialMessage {
     return {
@@ -310,7 +341,7 @@ function outofboundsWorkerUrlCtorArg(
 }
 
 function invalidWorkerUrlCtorArg(
-    location: Partial<Location>,
+    location: Location,
     workerCtorMatch: RegExpExecArray,
 ): PartialMessage {
     return {
@@ -318,4 +349,75 @@ function invalidWorkerUrlCtorArg(
         text: `The ${workerCtorMatch.groups!.ctor} constructor URL arg \`${workerCtorMatch.groups!.url}\` must be a relative module path`,
         location,
     }
+}
+
+// added to `esbuild.context({plugins})` to enhance errors logged by `esbuild.Context.serve()`
+function errorsPlugin(r: WebsiteRegistry): Plugin {
+    return {
+        name: '@eighty4/dank/esbuild/errors',
+        setup(build: PluginBuild) {
+            if (!build.initialOptions.metafile)
+                throw TypeError('plugin requires metafile')
+
+            build.onEnd(async (result: BuildResult<{ metafile: true }>) => {
+                if (result.errors.length) {
+                    await enhanceEsbuildBuildFailure(r, result)
+                    printEsbuildBuildFailureMessages(result)
+                }
+            })
+        },
+    }
+}
+
+async function enhanceEsbuildBuildFailure(
+    r: WebsiteRegistry,
+    e: Pick<BuildFailure, 'errors'>,
+) {
+    const unresolvedEntrypointPattern = new RegExp(
+        /^Could not resolve "(?<p>.+?)"$/,
+    )
+    for (const m of e.errors) {
+        const unresolvedEntrypointMatch = unresolvedEntrypointPattern.exec(
+            m.text,
+        )
+        if (unresolvedEntrypointMatch) {
+            const p = unresolvedEntrypointMatch.groups!.p
+            const w = r.workers!.find(w => w.entrypoint.in === p)
+            if (w) {
+                await enhanceUnresolvedWorkerEntrypointMessage(r, m, p, w)
+            }
+        }
+    }
+}
+
+async function enhanceUnresolvedWorkerEntrypointMessage(
+    r: WebsiteRegistry,
+    m: Message,
+    p: string,
+    w: WorkerManifest,
+) {
+    let location: Location | null = null
+    const source = await readFile(
+        join(r.config.dirs.projectRootAbs, w.clientScript),
+        'utf8',
+    )
+    const sourcePattern = new RegExp(
+        `new(?:\\s|\\r?\\n)+${w.ctor}(?:\\s|\\r?\\n)*\\((?:\\s|\\r?\\n)*(?<url>('.*'|".*"))(?:\\s|\\r?\\n)*[\\),]`,
+    )
+    const sourceMatch = sourcePattern.exec(source)
+    if (sourceMatch) {
+        location = buildMessageLocation(
+            w.clientScript,
+            source,
+            sourceMatch.index + sourceMatch[0].indexOf(sourceMatch[1]),
+            sourceMatch[1].length,
+        )
+    }
+    m.text = `Could not find ${w.ctor} entrypoint "${p}"`
+    m.notes = [
+        {
+            text: `The ${w.ctor} entrypoint was found in "${w.clientScript}":`,
+            location,
+        },
+    ]
 }
