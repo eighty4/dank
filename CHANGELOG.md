@@ -21,6 +21,10 @@
 
 ### Changed
 
+- `dank build` creates a production build by default now, previous
+  opt-in flags for production builds `--minify` and `--production`
+  are now implicit for `dank build` and remain as available flags
+  of `dank serve`
 - Worker constructor URLs are no longer limited to the pages directory
   and can now resolve to any path within the project directory
 - Built workers are now deployed to `.lib` directory of `build/dist`

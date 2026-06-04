@@ -15,12 +15,7 @@ export async function buildWebsite(
         c = await loadConfig('build', process.cwd())
     }
     console.log(
-        c.flags.minify
-            ? c.flags.production
-                ? 'minified production'
-                : 'minified'
-            : 'unminified',
-        'build',
+        'minified build',
         await c.buildTag(),
         'building in ./build/dist',
     )

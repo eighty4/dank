@@ -93,7 +93,7 @@ class DankConfigInternal implements ResolvedDankConfig {
         dirs: DankDirectories,
     ) {
         this.#dirs = dirs
-        this.#flags = lookupDankFlags()
+        this.#flags = lookupDankFlags(mode)
         this.#mode = mode
         this.#modulePath = modulePath
     }

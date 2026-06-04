@@ -7,14 +7,14 @@ export type DankFlags = {
     production: boolean
 }
 
-export function resolveFlags(): Readonly<DankFlags> {
+export function resolveFlags(mode: 'build' | 'serve'): Readonly<DankFlags> {
     return Object.freeze({
-        dankPort: resolveDankPort(),
-        esbuildPort: resolveEsbuildPort(),
-        logHttp: willLogHttp(),
-        minify: willMinify(),
-        preview: isPreviewBuild(),
-        production: isProductionBuild(),
+        dankPort: mode === 'serve' ? resolveDankPort() : undefined,
+        esbuildPort: mode === 'serve' ? resolveEsbuildPort() : undefined,
+        logHttp: mode === 'serve' && willLogHttp(),
+        minify: mode === 'build' || willMinify(),
+        preview: mode === 'serve' && isPreviewBuild(),
+        production: mode === 'build' || isProductionBuild(),
     })
 }
 

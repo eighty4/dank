@@ -19,7 +19,7 @@ pnpm create dank --out-dir www
 - `dank serve` updates CSS in real-time (hot-reloading)
 - `dank serve` launches development processes and merges their stdio
 - `dank serve --preview` builds the website and serves the output from `dist`
-- `dank build --production` optimizes with `esbuild` minifying and tree-shaking
+- `dank build` minifies and tree-shakes with `esbuild`
 - DANK's codebase is so tiny you can read it all in 20 minutes
 
 ### DANK isn't for every use case!

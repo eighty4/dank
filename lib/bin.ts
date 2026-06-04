@@ -11,24 +11,22 @@ import { serveWebsite } from './serve.ts'
 
 function printHelp(task?: 'build' | 'serve'): never {
     if (!task || task === 'build') {
-        console.log('dank build [--minify] [--production] [--service-worker]')
+        console.log('dank build [--service-worker]')
     }
     if (!task || task === 'serve') {
         console.log(
-            // 'dank serve [--minify] [--preview] [--production]',
-            'dank serve [--minify] [--production] [--service-worker]',
+            'dank serve [--log-http] [--minify] [--production] [--service-worker]',
         )
     }
     console.log('\nOPTIONS:')
-    if (!task || task === 'serve')
+    if (!task || task === 'serve') {
         console.log('  --log-http        print access logs')
-    console.log('  --minify          minify sources')
-    // if (!task || task === 'serve') console.log('  --preview      pre-bundle and build ServiceWorker')
-    console.log('  --production      build for production release')
+        console.log('  --minify          minify sources')
+        console.log('  --production      build for production release')
+    }
     console.log('  --service-worker  build service worker')
     if (task) {
-        console.log()
-        console.log('use `dank -h` for details on all commands')
+        console.log('\nuse `dank -h` for details on all commands')
     }
     process.exit(1)
 }
@@ -95,11 +93,9 @@ function printCommandError(msg: string): never {
 }
 
 function printError(e: unknown) {
-    if (e instanceof DankError) {
-        console.error(red('error:'), e.message)
-    } else if (isEsbuildBuildFailure(e)) {
+    if (isEsbuildBuildFailure(e)) {
         printEsbuildBuildFailureMessages(e)
     } else {
-        console.error(red('error:'), e)
+        console.error(red('error:'), e instanceof DankError ? e.message : e)
     }
 }
