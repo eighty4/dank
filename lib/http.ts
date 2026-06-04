@@ -7,7 +7,7 @@ import {
     type OutgoingHttpHeaders,
     type ServerResponse,
 } from 'node:http'
-import { extname, join } from 'node:path'
+import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import mime from 'mime'
 import type { WebsiteManifest } from './dank.ts'
@@ -75,7 +75,7 @@ async function onNotFound(
     urlRewriteProvider: UrlRewriteProvider,
     res: ServerResponse,
 ) {
-    if (req.method === 'GET' && extname(url.pathname) === '') {
+    if (req.method === 'GET') {
         const urlRewrite = tryUrlRewrites(
             flags,
             dirs,

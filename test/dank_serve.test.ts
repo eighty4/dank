@@ -40,45 +40,61 @@ suite('`dank serve`', () => {
     })
 
     suite('serving url rewrites', () => {
-        suite('on startup', () => {
+        test('matches page pattern', async () => {
+            const project = await createDank()
+            await project.writeConfig(`\
+    export default {
+        pages: {
+            '/configure': {
+                pattern: /asdf/,
+                webpage: './dank.html',
+            },
+        },
+    }`)
+            using dankServing = await project.serve()
+            dankServing.on('error', assert.fail)
+            dankServing.on('exit', assert.fail)
+            await dankServing.start()
+            await dankServing.assertFetchStatus('/asdf', 200)
+            await dankServing.assertFetchStatus('/configure', 200)
+        })
+
+        test('matches tld in a github repo path', async () => {
+            const project = await createDank()
+            await project.writeConfig(`\
+    export default {
+        pages: {
+            '/project': {
+                pattern: /^\\/[a-z\\d][a-z\\d-_]{0,37}[a-z\\d]?\\/[a-z\\d._][a-z\\d-._]{0,38}[a-z\\d._]?$/,
+                webpage: './dank.html',
+            },
+        },
+    }`)
+            using dankServing = await project.serve()
+            dankServing.on('error', assert.fail)
+            dankServing.on('exit', assert.fail)
+            await dankServing.start()
+            await dankServing.assertFetchStatus('/eighty4/sidelines.dev', 200)
+        })
+
+        suite('--preview', () => {
             test('matches page pattern', async () => {
                 const project = await createDank()
                 await project.writeConfig(`\
-        export default {
-            pages: {
-                '/configure': {
-                    pattern: /asdf/,
-                    webpage: './dank.html',
-                },
+    export default {
+        pages: {
+            '/configure': {
+                pattern: /asdf/,
+                webpage: './dank.html',
             },
-        }`)
-                using dankServing = await project.serve()
+        },
+    }`)
+                using dankServing = await project.servePreview()
                 dankServing.on('error', assert.fail)
                 dankServing.on('exit', assert.fail)
                 await dankServing.start()
                 await dankServing.assertFetchStatus('/asdf', 200)
                 await dankServing.assertFetchStatus('/configure', 200)
-            })
-
-            suite('--preview', () => {
-                test('matches page pattern', async () => {
-                    const project = await createDank()
-                    await project.writeConfig(`\
-        export default {
-            pages: {
-                '/configure': {
-                    pattern: /asdf/,
-                    webpage: './dank.html',
-                },
-            },
-        }`)
-                    using dankServing = await project.servePreview()
-                    dankServing.on('error', assert.fail)
-                    dankServing.on('exit', assert.fail)
-                    await dankServing.start()
-                    await dankServing.assertFetchStatus('/asdf', 200)
-                    await dankServing.assertFetchStatus('/configure', 200)
-                })
             })
         })
 
