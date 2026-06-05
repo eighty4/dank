@@ -308,6 +308,14 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
             ),
             JSON.stringify(manifest, null, 4),
         )
+        await writeFile(
+            join(
+                this.#c.dirs.projectRootAbs,
+                this.#c.dirs.buildRoot,
+                'workers.json',
+            ),
+            JSON.stringify(this.#workers || [], null, 4),
+        )
         return manifest
     }
 
