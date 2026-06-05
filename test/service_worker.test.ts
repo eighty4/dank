@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { suite, test } from 'node:test'
-import { createDank } from './dank_project_testing.ts'
 import { createServiceWorker } from '../lib/service_worker.ts'
+import { createDank } from './dank_project_testing.ts'
 
 suite('Service workers', () => {
     suite('`dank build`', () => {

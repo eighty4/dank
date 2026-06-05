@@ -3,7 +3,6 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { suite, test } from 'node:test'
 import esbuild from 'esbuild'
-import { createDank, testDir } from './dank_project_testing.ts'
 import { createWorkerRegex } from '../lib/build.ts'
 import { esbuildWebpages, workersPlugin } from '../lib/esbuild.ts'
 import {
@@ -11,6 +10,7 @@ import {
     WorkerBuildRegistry,
     type WorkerManifest,
 } from '../lib/registry.ts'
+import { createDank, testDir } from './dank_project_testing.ts'
 
 suite('Web workers', () => {
     suite('`dank build`', () => {

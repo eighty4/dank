@@ -18,8 +18,6 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { stripVTControlCharacters } from 'node:util'
-import { waitForEsbuildServe } from './esbuild_events_testing.ts'
-import { getAvailablePort, waitForPort } from './ports.ts'
 import { loadConfig, type ResolvedDankConfig } from '../lib/config.ts'
 import type { WebsiteManifest } from '../lib/dank.ts'
 import {
@@ -27,6 +25,8 @@ import {
     Resolver,
     type DankDirectories,
 } from '../lib/dirs.ts'
+import { waitForEsbuildServe } from './esbuild_events_testing.ts'
+import { getAvailablePort, waitForPort } from './ports.ts'
 
 const DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true'
 

@@ -6,9 +6,9 @@ import type { ResolvedDankConfig } from './config.ts'
 import type { PageMapping, WebsiteManifest } from './dank.ts'
 import { LOG } from './developer.ts'
 import { Resolver, type DankDirectories } from './dirs.ts'
+import { DankError } from './errors.ts'
 import type { EsbuildEntrypoint } from './esbuild.ts'
 import { HtmlEntrypoint } from './html.ts'
-import { DankError } from './errors.ts'
 
 export type EntrypointManifest = {
     cssBundle?: `/${string}`
