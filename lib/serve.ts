@@ -1,6 +1,7 @@
 import { rm } from 'node:fs/promises'
 import { extname } from 'node:path'
 import type { BuildContext } from 'esbuild'
+import { red } from './ansi.ts'
 import { buildWebsite } from './build.ts'
 import { loadConfig, type ResolvedDankConfig } from './config.ts'
 import { createGlobalDefinitions } from './define.ts'
@@ -142,9 +143,9 @@ async function startDevMode() {
     }
 
     registry.on('webpage', html => {
-        html.on('error', e =>
-            console.log(`\u001b[31merror:\u001b[0m`, e.message),
-        )
+        html.on('error', e => {
+            console.log(red('error:'), e.message)
+        })
         html.on('output', output => {
             const path: `/${string}` = `${html.url}/index.html`
             htmlFiles[path] = output
