@@ -152,7 +152,7 @@ suite('HTML partials', () => {
 
     suite('`dank serve`', () => {
         suite('serving partials', () => {
-            test.only('add partial to webpage', async () => {
+            test('add partial to webpage', async () => {
                 const project = await createDank({
                     files: {
                         'pages/notification_ui.html':

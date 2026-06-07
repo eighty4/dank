@@ -144,6 +144,7 @@ async function startDevMode() {
 
     registry.on('webpage', html => {
         html.on('error', e => {
+            delete htmlFiles[html.url]
             console.log(red('error:'), e.message)
         })
         html.on('output', output => {
