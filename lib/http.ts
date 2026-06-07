@@ -27,9 +27,7 @@ export type FrontendFetcher = (
     notFound: () => void,
 ) => void
 
-export type HtmlFileFetcher = (
-    url: `/${string}/index.html`,
-) => Promise<string | null>
+export type HtmlFileFetcher = (url: `/${string}`) => Promise<string | null>
 
 export function startWebServer(
     c: ResolvedDankConfig,
@@ -77,9 +75,11 @@ async function onNotFound(
     res: ServerResponse,
 ) {
     if (req.method === 'GET') {
-        const urlRewrite = tryUrlRewrites(urlRewriteProvider.urlRewrites, url)
+        const urlRewrite = urlRewriteProvider.urlRewrites.find(urlRewrite =>
+            urlRewrite.pattern.test(url.pathname),
+        )
         if (urlRewrite) {
-            sendHtml(res, await htmlFileFetcher(urlRewrite))
+            sendHtml(res, await htmlFileFetcher(urlRewrite.url))
             return
         }
     }
@@ -103,16 +103,6 @@ async function sendFetchResponse(res: ServerResponse, fetchResponse: Response) {
     } else {
         res.end()
     }
-}
-
-function tryUrlRewrites(
-    urlRewrites: Array<UrlRewrite>,
-    url: URL,
-): `/${string}/index.html` | null {
-    const urlRewrite = urlRewrites.find(urlRewrite =>
-        urlRewrite.pattern.test(url.pathname),
-    )
-    return urlRewrite ? `${urlRewrite.url}/index.html` : null
 }
 
 async function tryHttpServices(
@@ -178,21 +168,13 @@ export function createBuiltDistHtmlFileFetcher(
     dirs: DankDirectories,
     manifest: WebsiteManifest,
 ): HtmlFileFetcher {
-    return async url => {
-        if (
-            manifest.pageUrls.includes(
-                url.substring(
-                    0,
-                    url.lastIndexOf('/index.html'),
-                ) as `/${string}`,
-            )
-        ) {
-            const p = join(dirs.projectRootAbs, dirs.buildDist, url)
-            return readFile(p, 'utf8')
-        } else {
-            return null
-        }
-    }
+    return async url =>
+        manifest.pageUrls.includes(url)
+            ? await readFile(
+                  join(dirs.projectRootAbs, dirs.buildDist, url, 'index.html'),
+                  'utf8',
+              )
+            : null
 }
 
 export function createBuiltDistFilesFetcher(
@@ -240,8 +222,8 @@ export function createDevServeFilesFetcher(
         notFound: () => void,
     ) => {
         if (registry.pageUrls.includes(url.pathname as `/${string}`)) {
-            htmlFileFetcher(`${url.pathname as `/${string}`}/index.html`).then(
-                html => sendHtml(res, html),
+            htmlFileFetcher(url.pathname as `/${string}`).then(html =>
+                sendHtml(res, html),
             )
         } else {
             const maybePublicPath = join(dirs.public, url.pathname)

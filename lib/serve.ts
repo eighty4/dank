@@ -147,14 +147,13 @@ async function startDevMode() {
             console.log(red('error:'), e.message)
         })
         html.on('output', output => {
-            const path: `/${string}` = `${html.url}/index.html`
-            htmlFiles[path] = output
+            htmlFiles[html.url] = output
             LOG({
                 realm: 'serve',
                 message: 'updating html output',
                 data: {
+                    url: html.url,
                     webpage: html.fsPath,
-                    path,
                 },
             })
         })
