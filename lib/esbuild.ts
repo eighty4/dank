@@ -267,10 +267,10 @@ export function workersPlugin(
                         workerCtorReplacement.length - workerCtorMatch[0].length
                     wr.addWorker({
                         clientScript,
-                        entrypoint,
                         ctor,
-                        placeholderCtorSrc,
+                        entrypoint,
                         originalCtorSrc,
+                        placeholderCtorSrc,
                     })
                 }
                 const loader = args.path.endsWith('ts') ? 'ts' : 'js'
@@ -394,31 +394,32 @@ async function enhanceEsbuildBuildFailure(
 async function enhanceUnresolvedWorkerEntrypointMessage(
     r: WebsiteRegistry,
     m: Message,
-    p: string,
+    unresolvePath: string,
     w: WorkerManifest,
 ) {
-    let location: Location | null = null
+    const workerClient = w.clients[0]
+    m.text = `Could not find ${workerClient.ctor} entrypoint "${unresolvePath}"`
     const source = await readFile(
-        join(r.config.dirs.projectRootAbs, w.clientScript),
+        join(r.config.dirs.projectRootAbs, workerClient.script),
         'utf8',
     )
+    const workerUrl = RegExp.escape(workerClient.originalCtorSrc)
     const sourcePattern = new RegExp(
-        `new(?:\\s|\\r?\\n)+${w.ctor}(?:\\s|\\r?\\n)*\\((?:\\s|\\r?\\n)*(?<url>('.*'|".*"))(?:\\s|\\r?\\n)*[\\),]`,
+        `new(?:\\s|\\r?\\n)+${workerClient.ctor}(?:\\s|\\r?\\n)*\\((?:\\s|\\r?\\n)*(?<url>('${workerUrl}'|"${workerUrl}"))(?:\\s|\\r?\\n)*[\\),]`,
     )
     const sourceMatch = sourcePattern.exec(source)
     if (sourceMatch) {
-        location = buildMessageLocation(
-            w.clientScript,
+        const location = buildMessageLocation(
+            workerClient.script,
             source,
-            sourceMatch.index + sourceMatch[0].indexOf(sourceMatch[1]),
-            sourceMatch[1].length,
+            sourceMatch.index + sourceMatch[0].indexOf(sourceMatch.groups!.url),
+            sourceMatch.groups!.url.length,
         )
+        m.notes = [
+            {
+                text: `The ${workerClient.ctor} entrypoint was found in "${workerClient.script}":`,
+                location,
+            },
+        ]
     }
-    m.text = `Could not find ${w.ctor} entrypoint "${p}"`
-    m.notes = [
-        {
-            text: `The ${w.ctor} entrypoint was found in "${w.clientScript}":`,
-            location,
-        },
-    ]
 }

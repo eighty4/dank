@@ -20,14 +20,22 @@ export type EntrypointManifest = {
 }
 
 export type WorkerManifest = {
-    // path to bundle containing `clientScript`
-    clientEntrypoint: string
-    // path to script with Worker ctor call
-    clientScript: string
-    ctor: 'Worker' | 'SharedWorker'
+    // instances of scripts using worker
+    clients: Array<WorkerClientManifest>
+    // entrypoint of worker
     entrypoint: EsbuildEntrypoint
     placeholderCtorSrc: `/${string}`
+}
+
+export type WorkerClientManifest = {
+    // entrypoint or chunk build/dist subpath
+    bundle: `/${string}`
+    ctor: 'Worker' | 'SharedWorker'
+    // original ctor url replaced with placeholderCtorSrc
     originalCtorSrc: string
+    // path to script with Worker ctor call
+    // matches `esbuild.Metafile.outputs` entrypoint or inputs path
+    script: string
 }
 
 type WebpageRegistration = {
@@ -438,11 +446,19 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
     }
 }
 
+export type WorkerCtorRegistration = {
+    clientScript: string
+    ctor: 'Worker' | 'SharedWorker'
+    entrypoint: EsbuildEntrypoint
+    originalCtorSrc: string
+    placeholderCtorSrc: `/${string}`
+}
+
 // result accumulator of an esbuild `build` or `Context.rebuild`
 export class WorkerBuildRegistry {
     #dirs: DankDirectories
     #resolver: Resolver
-    #workers: Array<Omit<WorkerManifest, 'clientEntrypoint'>> | null = null
+    #workers: Array<WorkerCtorRegistration> | null = null
 
     constructor(dirs: DankDirectories, resolver: Resolver) {
         this.#dirs = dirs
@@ -464,22 +480,40 @@ export class WorkerBuildRegistry {
             return null
         }
         const workers: Array<WorkerManifest> = []
-        for (const output of Object.values(build.outputs)) {
-            if (!output.entryPoint) continue
+        const clients: Record<
+            WorkerManifest['placeholderCtorSrc'],
+            Array<WorkerClientManifest>
+        > = {}
+        for (const [bundle, output] of Object.entries(build.outputs)) {
             const inputs = Object.keys(output.inputs)
             for (const worker of this.#workers) {
                 if (inputs.includes(worker.clientScript)) {
-                    workers.push({
-                        ...worker,
-                        clientEntrypoint: output.entryPoint,
-                    })
+                    const client = {
+                        bundle: stripBuildDir(bundle),
+                        ctor: worker.ctor,
+                        originalCtorSrc: worker.originalCtorSrc,
+                        script: worker.clientScript,
+                    }
+                    if (clients[worker.placeholderCtorSrc]) {
+                        clients[worker.placeholderCtorSrc].push(client)
+                    } else {
+                        workers.push({
+                            clients: [],
+                            entrypoint: worker.entrypoint,
+                            placeholderCtorSrc: worker.placeholderCtorSrc,
+                        })
+                        clients[worker.placeholderCtorSrc] = [client]
+                    }
                 }
             }
+        }
+        for (const worker of workers) {
+            worker.clients = clients[worker.placeholderCtorSrc]
         }
         return workers
     }
 
-    addWorker(worker: Omit<WorkerManifest, 'clientEntrypoint'>) {
+    addWorker(worker: WorkerCtorRegistration) {
         if (!this.#workers) {
             this.#workers = [worker]
         } else {

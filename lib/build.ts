@@ -78,8 +78,8 @@ async function rewriteWorkerUrls(
     if (!workers) {
         return
     }
-    const dependentBundlePaths = workers.map(w =>
-        registry.mappedHref(w.clientEntrypoint),
+    const dependentBundlePaths = Array.from(
+        new Set(workers.flatMap(w => w.clients.map(c => c.bundle))),
     )
 
     const bundleOutputs: Record<string, string> = {}
@@ -98,14 +98,16 @@ async function rewriteWorkerUrls(
     const rewriteChains: Record<string, Array<(s: string) => string>> = {}
     for (const p of dependentBundlePaths) rewriteChains[p] = []
     for (const w of workers) {
-        rewriteChains[registry.mappedHref(w.clientEntrypoint)].push(s =>
-            s.replace(
-                createWorkerRegex(w.ctor, w.placeholderCtorSrc),
-                match =>
-                    `new ${w.ctor}('${registry.mappedHref(w.entrypoint.in)}'` +
-                    match.at(-1),
-            ),
-        )
+        for (const c of w.clients) {
+            rewriteChains[c.bundle].push(s =>
+                s.replace(
+                    createWorkerRegex(c.ctor, w.placeholderCtorSrc),
+                    match =>
+                        `new ${c.ctor}('${registry.mappedHref(w.entrypoint.in)}'` +
+                        match.at(-1),
+                ),
+            )
+        }
     }
 
     // wait for file reads

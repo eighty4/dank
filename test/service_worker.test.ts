@@ -23,7 +23,7 @@ export default {
             const result = await project.build()
             result.assertSuccess()
             assert.ok(await project.readFromBuild('sw.js'))
-            const manifest = await project.readManifest()
+            const manifest = await project.readBuildWebsiteManifest()
             assert.ok(manifest.files.includes('/sw.js'))
         })
 
@@ -142,7 +142,7 @@ export default {
             serving.on('exit', assert.fail)
             await serving.assertFetchStatus('/sw.js', 200)
             serving.shutdown()
-            const manifest = await project.readManifest()
+            const manifest = await project.readBuildWebsiteManifest()
             assert.ok(manifest.files.includes('/sw.js'))
         })
     })

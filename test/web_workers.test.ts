@@ -1,19 +1,33 @@
 import assert from 'node:assert/strict'
-import { mkdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { suite, test } from 'node:test'
-import esbuild from 'esbuild'
 import { createWorkerRegex } from '../lib/build.ts'
-import { esbuildWebpages, workersPlugin } from '../lib/esbuild.ts'
-import {
-    WebsiteRegistry,
-    WorkerBuildRegistry,
-    type WorkerManifest,
-} from '../lib/registry.ts'
-import { createDank, testDir } from './dank_project_testing.ts'
+import { createDank } from './dank_project_testing.ts'
 
 suite('Web workers', () => {
     suite('`dank build`', () => {
+        test('ignores commented workers', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/mega-performant-ui-thread.ts': `\
+/*
+* new Worker('./multi-line-block.ts')
+*/
+/* new Worker('./single-line-block.ts') */
+// new Worker('./full-line.ts')
+let w = 'w' // new Worker('./partial-line.ts')
+/*
+* new SharedWorker('./multi-line-block.ts')
+*/
+/* new SharedWorker('./single-line-block.ts') */
+// new SharedWorker('./full-line.ts')
+w = 'w' // new SharedWorker('./partial-line.ts')`,
+                },
+            })
+            const result = await project.build()
+            result.assertSuccess()
+            assert.deepEqual(await project.readBuildWorkersManifest(), [])
+        })
+
         suite('rewriting worker url with build hash', () => {
             test('with path ctor arg only', async () => {
                 for (const ctor of ['Worker', 'SharedWorker']) {
@@ -66,28 +80,134 @@ suite('Web workers', () => {
                     )
                 }
             })
-        })
 
-        suite('errors', () => {
-            test('unresolved worker ctor entrypoint', async () => {
+            test('registers client for each ctor in script', async () => {
                 for (const ctor of ['Worker', 'SharedWorker']) {
                     const project = await createDank({
                         files: {
-                            'pages/dank.ts': `new ${ctor}('./notworker.ts')`,
+                            'pages/dank.ts': `\
+                                const w = new ${ctor}('./computational-wizardry.ts', {
+                                    name: 'fancy calc',
+                                })
+                                console.log('lets do it again')
+                                const w2 = new ${ctor}('./computational-wizardry.ts', {
+                                    name: 'fancy calc',
+                                })`,
+                            'pages/computational-wizardry.ts': '',
                         },
                     })
                     const result = await project.build()
-                    result.assertFailed()
-                    result.assertOutput(
-                        `Could not find ${ctor} entrypoint "pages/notworker.ts"`,
+                    result.assertSuccess()
+                    const workers = await project.readBuildWorkersManifest()
+                    assert.equal(workers.length, 1)
+                    assert.equal(workers[0].clients.length, 2)
+                }
+            })
+
+            test('registers client for ctors in multiple scripts', async () => {
+                for (const ctor of ['Worker', 'SharedWorker']) {
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.html': `\
+                                <script src="./dank.ts"></script>
+                                <script src="./codes/api.ts"></script>
+                            `,
+                            'pages/dank.ts': `\
+                                const w = new ${ctor}('./codes/computational-wizardry.ts', {
+                                    name: 'fancy calc',
+                                })`,
+                            'pages/codes/api.ts': `\
+                                const w = new ${ctor}('./computational-wizardry.ts', {
+                                    name: 'fancy calc',
+                                })
+                            `,
+                            'pages/codes/computational-wizardry.ts': '',
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertSuccess()
+                    const workers = await project.readBuildWorkersManifest()
+                    assert.equal(workers.length, 1)
+                    assert.equal(workers[0].clients.length, 2)
+                }
+            })
+
+            test('rewrites at correct offset for multiple workers', async () => {
+                for (const ctor of ['SharedWorker', 'Worker'] as const) {
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `\
+console.log('devtools ui innovation')
+new ${ctor}('./computational-wizardry.ts')
+new ${ctor}('./data-orchestration.ts')`,
+                            'pages/computational-wizardry.ts': '',
+                            'pages/data-orchestration.ts': '',
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertSuccess()
+                    await project.assertDistContent(
+                        'dank.js',
+                        `new ${ctor}('/.lib/pages/computational-wizardry`,
                     )
-                    result.assertOutput(
-                        `The ${ctor} entrypoint was found in "pages/dank.ts":`,
+                    await project.assertDistContent(
+                        'dank.js',
+                        `new ${ctor}('/.lib/pages/data-orchestration`,
                     )
-                    result.assertOutput(
-                        `pages/dank.ts:1:${'new ('.length + ctor.length}:`,
+                    await project.assertDistExists(
+                        '.lib/pages/computational-wizardry.js',
+                    )
+                    await project.assertDistExists(
+                        '.lib/pages/data-orchestration.js',
                     )
                 }
+            })
+        })
+
+        suite('errors', () => {
+            suite('unresolved worker ctor entrypoint', () => {
+                test('entrypoint with worker ctor', async () => {
+                    for (const ctor of ['Worker', 'SharedWorker']) {
+                        const project = await createDank({
+                            files: {
+                                'pages/dank.ts': `new ${ctor}('./notworker.ts')`,
+                            },
+                        })
+                        const result = await project.build()
+                        result.assertFailed()
+                        result.assertOutput(
+                            `Could not find ${ctor} entrypoint "pages/notworker.ts"`,
+                        )
+                        result.assertOutput(
+                            `The ${ctor} entrypoint was found in "pages/dank.ts":`,
+                        )
+                        result.assertOutput(
+                            `pages/dank.ts:1:${'new ('.length + ctor.length}:`,
+                        )
+                    }
+                })
+                test('one module with two workers unresolved', async () => {
+                    for (const ctor of ['Worker', 'SharedWorker']) {
+                        if (ctor === 'SharedWorker') continue
+                        const project = await createDank({
+                            files: {
+                                'pages/dank.ts': `new ${ctor}('./notworker.ts')\nnew ${ctor}('./andmeneither.ts')`,
+                            },
+                        })
+                        const result = await project.build()
+                        result.assertFailed()
+                        result.assertOrderedOutput(
+                            `Could not find ${ctor} entrypoint "pages/andmeneither.ts"`,
+                            `The ${ctor} entrypoint was found in "pages/dank.ts":`,
+                            `pages/dank.ts:1:${'new ('.length + ctor.length}:`,
+                            `1 │ new ${ctor}('./andmeneither.ts')`,
+                            `Could not find ${ctor} entrypoint "pages/notworker.ts"`,
+                            `The ${ctor} entrypoint was found in "pages/dank.ts":`,
+                            `pages/dank.ts:1:${'new ('.length + ctor.length}:`,
+                            `1 │ new ${ctor}('./notworker.ts')`,
+                        )
+                    }
+                })
             })
         })
     })
@@ -177,389 +297,6 @@ suite('Web workers', () => {
                     [script, script, script].join(' ').replace(regex, worker),
                     [worker, worker, worker].join(' '),
                 )
-            })
-        })
-    })
-    suite('esbuild.ts', () => {
-        suite('esbuild plugin worker detection', () => {
-            test('finds worker url in worker ctor', async () => {
-                for (const ctor of ['SharedWorker', 'Worker'] as const) {
-                    const { dirs, resolver } = await testDir({
-                        files: {
-                            'pages/mega-performant-ui-thread.ts': `\
-console.log('devtools ui innovation')
-const w = new ${ctor}('./computational-wizardry.ts')
-w.onerror = console.error
-`,
-                        },
-                    })
-                    const workerRegistry = new WorkerBuildRegistry(
-                        dirs,
-                        resolver,
-                    )
-                    const { metafile } = await esbuild.build({
-                        absWorkingDir: dirs.projectRootAbs,
-                        entryPoints: [
-                            {
-                                in: 'pages/mega-performant-ui-thread.ts',
-                                out: 'mega-performant-ui-thread',
-                            },
-                        ],
-                        metafile: true,
-                        plugins: [workersPlugin(workerRegistry)],
-                        outdir: 'build',
-                        write: true,
-                    })
-                    assert.deepEqual(workerRegistry.resolveWorkers(metafile), [
-                        {
-                            clientEntrypoint:
-                                'pages/mega-performant-ui-thread.ts',
-                            clientScript: 'pages/mega-performant-ui-thread.ts',
-                            ctor,
-                            entrypoint: {
-                                in: 'pages/computational-wizardry.ts',
-                                out: '.lib/pages/computational-wizardry.js',
-                            },
-                            originalCtorSrc: './computational-wizardry.ts',
-                            placeholderCtorSrc:
-                                '/.lib/pages/computational-wizardry.js',
-                        } satisfies WorkerManifest,
-                    ])
-                    assert.equal(
-                        await readFile(
-                            join(
-                                dirs.projectRootAbs,
-                                'build',
-                                'mega-performant-ui-thread.js',
-                            ),
-                            'utf8',
-                        ),
-                        `\
-console.log("devtools ui innovation");
-const w = new ${ctor}("/.lib/pages/computational-wizardry.js");
-w.onerror = console.error;
-`,
-                    )
-                }
-            })
-
-            test('finds worker url with opts arg in worker ctor', async () => {
-                for (const ctor of ['SharedWorker', 'Worker'] as const) {
-                    const { dirs, resolver } = await testDir({
-                        files: {
-                            'pages/mega-performant-ui-thread.ts': `\
-console.log('devtools ui innovation')
-const w = new ${ctor}('./computational-wizardry.ts', { name: 'magellan' })
-w.onerror = console.error
-`,
-                        },
-                    })
-                    const workerRegistry = new WorkerBuildRegistry(
-                        dirs,
-                        resolver,
-                    )
-                    const { metafile } = await esbuild.build({
-                        absWorkingDir: dirs.projectRootAbs,
-                        entryPoints: [
-                            {
-                                in: 'pages/mega-performant-ui-thread.ts',
-                                out: 'mega-performant-ui-thread',
-                            },
-                        ],
-                        metafile: true,
-                        plugins: [workersPlugin(workerRegistry)],
-                        outdir: 'build',
-                        write: true,
-                    })
-                    assert.deepEqual(workerRegistry.resolveWorkers(metafile), [
-                        {
-                            clientEntrypoint:
-                                'pages/mega-performant-ui-thread.ts',
-                            clientScript: 'pages/mega-performant-ui-thread.ts',
-                            ctor,
-                            entrypoint: {
-                                in: 'pages/computational-wizardry.ts',
-                                out: '.lib/pages/computational-wizardry.js',
-                            },
-                            originalCtorSrc: './computational-wizardry.ts',
-                            placeholderCtorSrc:
-                                '/.lib/pages/computational-wizardry.js',
-                        } satisfies WorkerManifest,
-                    ])
-                    assert.equal(
-                        await readFile(
-                            join(
-                                dirs.projectRootAbs,
-                                'build',
-                                'mega-performant-ui-thread.js',
-                            ),
-                            'utf8',
-                        ),
-                        `\
-console.log("devtools ui innovation");
-const w = new ${ctor}("/.lib/pages/computational-wizardry.js", { name: "magellan" });
-w.onerror = console.error;
-`,
-                    )
-                }
-            })
-
-            test('rewrites at correct offset for multiple workers', async () => {
-                for (const ctor of ['SharedWorker', 'Worker'] as const) {
-                    const { dirs, resolver } = await testDir({
-                        files: {
-                            'pages/mega-performant-ui-thread.ts': `\
-console.log('devtools ui innovation')
-const w1 = new ${ctor}('./computational-wizardry.ts')
-const w2 = new ${ctor}('./data-orchestration.ts')
-`,
-                        },
-                    })
-                    const workerRegistry = new WorkerBuildRegistry(
-                        dirs,
-                        resolver,
-                    )
-                    const { metafile } = await esbuild.build({
-                        absWorkingDir: dirs.projectRootAbs,
-                        entryPoints: [
-                            {
-                                in: 'pages/mega-performant-ui-thread.ts',
-                                out: 'mega-performant-ui-thread',
-                            },
-                        ],
-                        metafile: true,
-                        plugins: [workersPlugin(workerRegistry)],
-                        outdir: 'build',
-                        write: true,
-                    })
-                    assert.deepEqual(workerRegistry.resolveWorkers(metafile), [
-                        {
-                            clientEntrypoint:
-                                'pages/mega-performant-ui-thread.ts',
-                            clientScript: 'pages/mega-performant-ui-thread.ts',
-                            ctor,
-                            entrypoint: {
-                                in: 'pages/computational-wizardry.ts',
-                                out: '.lib/pages/computational-wizardry.js',
-                            },
-                            originalCtorSrc: './computational-wizardry.ts',
-                            placeholderCtorSrc:
-                                '/.lib/pages/computational-wizardry.js',
-                        } satisfies WorkerManifest,
-                        {
-                            clientEntrypoint:
-                                'pages/mega-performant-ui-thread.ts',
-                            clientScript: 'pages/mega-performant-ui-thread.ts',
-                            ctor,
-                            entrypoint: {
-                                in: 'pages/data-orchestration.ts',
-                                out: '.lib/pages/data-orchestration.js',
-                            },
-                            originalCtorSrc: './data-orchestration.ts',
-                            placeholderCtorSrc:
-                                '/.lib/pages/data-orchestration.js',
-                        } satisfies WorkerManifest,
-                    ])
-                    assert.equal(
-                        await readFile(
-                            join(
-                                dirs.projectRootAbs,
-                                'build',
-                                'mega-performant-ui-thread.js',
-                            ),
-                            'utf8',
-                        ),
-                        `\
-console.log("devtools ui innovation");
-const w1 = new ${ctor}("/.lib/pages/computational-wizardry.js");
-const w2 = new ${ctor}("/.lib/pages/data-orchestration.js");
-`,
-                    )
-                }
-            })
-
-            test('resolves worker url from an entrypoint import', async () => {
-                for (const ctor of ['Worker', 'SharedWorker'] as const) {
-                    const { dirs, resolver } = await testDir({
-                        files: {
-                            'pages/mega-performant-ui-thread.ts': `import './mega-performant-ui-code.ts'`,
-                            'pages/mega-performant-ui-code.ts': `\
-console.log('devtools ui innovation')
-const w = new ${ctor}('./computational-wizardry.ts')
-w.onerror = console.error`,
-                        },
-                    })
-                    const workerRegistry = new WorkerBuildRegistry(
-                        dirs,
-                        resolver,
-                    )
-                    const { metafile } = await esbuild.build({
-                        absWorkingDir: dirs.projectRootAbs,
-                        bundle: true,
-                        entryPoints: [
-                            {
-                                in: 'pages/mega-performant-ui-thread.ts',
-                                out: 'mega-performant-ui-thread',
-                            },
-                        ],
-                        format: 'esm',
-                        metafile: true,
-                        plugins: [workersPlugin(workerRegistry)],
-                        write: false,
-                    })
-                    assert.deepEqual(workerRegistry.resolveWorkers(metafile), [
-                        {
-                            clientEntrypoint:
-                                'pages/mega-performant-ui-thread.ts',
-                            clientScript: 'pages/mega-performant-ui-code.ts',
-                            ctor,
-                            entrypoint: {
-                                in: 'pages/computational-wizardry.ts',
-                                out: '.lib/pages/computational-wizardry.js',
-                            },
-                            originalCtorSrc: './computational-wizardry.ts',
-                            placeholderCtorSrc:
-                                '/.lib/pages/computational-wizardry.js',
-                        } satisfies WorkerManifest,
-                    ])
-                }
-            })
-
-            test('resolves worker entrypoint via relative bundle import', async () => {
-                for (const ctor of ['Worker', 'SharedWorker'] as const) {
-                    const { dirs, resolver } = await testDir({
-                        files: {
-                            'pages/mega-performant-ui-thread.ts': `import './lib/mega-performant-ui-code.ts'`,
-                            'pages/lib/mega-performant-ui-code.ts': `\
-console.log('devtools ui innovation')
-const w = new ${ctor}('./computational-wizardry.ts')
-w.onerror = console.error`,
-                        },
-                    })
-                    const workerRegistry = new WorkerBuildRegistry(
-                        dirs,
-                        resolver,
-                    )
-                    const { metafile } = await esbuild.build({
-                        absWorkingDir: dirs.projectRootAbs,
-                        bundle: true,
-                        entryPoints: [
-                            {
-                                in: 'pages/mega-performant-ui-thread.ts',
-                                out: 'mega-performant-ui-thread',
-                            },
-                        ],
-                        format: 'esm',
-                        metafile: true,
-                        plugins: [workersPlugin(workerRegistry)],
-                        write: false,
-                    })
-                    assert.deepEqual(workerRegistry.resolveWorkers(metafile), [
-                        {
-                            clientScript:
-                                'pages/lib/mega-performant-ui-code.ts',
-                            clientEntrypoint:
-                                'pages/mega-performant-ui-thread.ts',
-                            ctor,
-                            entrypoint: {
-                                in: 'pages/lib/computational-wizardry.ts',
-                                out: '.lib/pages/lib/computational-wizardry.js',
-                            },
-                            originalCtorSrc: './computational-wizardry.ts',
-                            placeholderCtorSrc:
-                                '/.lib/pages/lib/computational-wizardry.js',
-                        } satisfies WorkerManifest,
-                    ])
-                }
-            })
-
-            test('ignores commented workers', async () => {
-                const { dirs, resolver } = await testDir({
-                    files: {
-                        'pages/mega-performant-ui-thread.ts': `\
-/*
-* new Worker('./multi-line-block.ts')
-*/
-/* new Worker('./single-line-block.ts') */
-// new Worker('./full-line.ts')
-let w = 'w' // new Worker('./partial-line.ts')
-/*
-* new SharedWorker('./multi-line-block.ts')
-*/
-/* new SharedWorker('./single-line-block.ts') */
-// new SharedWorker('./full-line.ts')
-w = 'w' // new SharedWorker('./partial-line.ts')`,
-                    },
-                })
-                const workerRegistry = new WorkerBuildRegistry(dirs, resolver)
-                const { metafile } = await esbuild.build({
-                    absWorkingDir: dirs.projectRootAbs,
-                    bundle: true,
-                    entryPoints: ['pages/mega-performant-ui-thread.ts'],
-                    format: 'esm',
-                    metafile: true,
-                    plugins: [workersPlugin(workerRegistry)],
-                    write: false,
-                })
-                assert.deepEqual(workerRegistry.resolveWorkers(metafile), null)
-            })
-        })
-    })
-    suite('registry.ts', () => {
-        suite('WebsiteRegistry', () => {
-            test('registers worker manifest', async () => {
-                for (const ctor of ['Worker', 'SharedWorker'] as const) {
-                    const project = await createDank({
-                        files: {
-                            'pages/mega-performant-ui-thread.ts': `\
-            const w = new ${ctor}('./computational-wizardry.ts')
-            w.onerror = console.error
-            `,
-                        },
-                    })
-                    await mkdir(project.path('build/metafiles'), {
-                        recursive: true,
-                    })
-                    const registry = new WebsiteRegistry(
-                        await project.loadConfig(),
-                    )
-                    let workersEvent = 0
-                    registry.on('workers', () => workersEvent++)
-                    const define = {
-                        'dank.IS_DEV': 'true',
-                        'dank.IS_PROD': 'false',
-                    }
-                    for (let i = 0; i < 5; i++) {
-                        await esbuildWebpages(registry, define, [
-                            {
-                                in: 'pages/mega-performant-ui-thread.ts',
-                                out: 'mega-performant-ui-thread.ts',
-                            },
-                        ])
-                    }
-                    assert.equal(workersEvent, 1)
-                    assert.deepEqual(registry.workerEntryPoints, [
-                        {
-                            in: 'pages/computational-wizardry.ts',
-                            out: '.lib/pages/computational-wizardry.js',
-                        },
-                    ])
-                    assert.deepEqual(registry.workers, [
-                        {
-                            clientEntrypoint:
-                                'pages/mega-performant-ui-thread.ts',
-                            clientScript: 'pages/mega-performant-ui-thread.ts',
-                            ctor,
-                            entrypoint: {
-                                in: 'pages/computational-wizardry.ts',
-                                out: '.lib/pages/computational-wizardry.js',
-                            },
-                            originalCtorSrc: './computational-wizardry.ts',
-                            placeholderCtorSrc:
-                                '/.lib/pages/computational-wizardry.js',
-                        } satisfies WorkerManifest,
-                    ])
-                }
             })
         })
     })

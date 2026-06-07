@@ -25,6 +25,7 @@ import {
     Resolver,
     type DankDirectories,
 } from '../lib/dirs.ts'
+import type { WorkerManifest } from '../lib/registry.ts'
 import { waitForEsbuildServe } from './esbuild_events_testing.ts'
 import { getAvailablePort, waitForPort } from './ports.ts'
 
@@ -293,9 +294,15 @@ class DankTestProject {
         }
     }
 
-    async readManifest(): Promise<WebsiteManifest> {
+    async readBuildWebsiteManifest(): Promise<WebsiteManifest> {
         return JSON.parse(
             await readFile(this.path('build/website.json'), 'utf8'),
+        )
+    }
+
+    async readBuildWorkersManifest(): Promise<Array<WorkerManifest>> {
+        return JSON.parse(
+            await readFile(this.path('build/workers.json'), 'utf8'),
         )
     }
 
@@ -323,7 +330,7 @@ export class DankBuildResult {
 
     constructor(success: boolean, output: string) {
         this.#success = success
-        this.#output = stripVTControlCharacters(output)
+        this.#output = stripVTControlCharacters(output.trim())
     }
 
     get success(): boolean {
@@ -342,14 +349,37 @@ export class DankBuildResult {
         if (typeof pattern === 'string') {
             assert.ok(
                 this.#output.includes(pattern),
-                `expected output to include \`${pattern}\`\n\n~~~ output ~~~\n\n${this.#output.trim()}\n\n~~~ /output ~~~\n`,
+                `expected output to include \`${pattern}\`\n\n~~~ output ~~~\n\n${this.#output}\n\n~~~ /output ~~~\n`,
             )
         } else {
             assert.ok(
                 pattern.test(this.#output),
-                `expected output to match pattern\n\nexpected: \`${pattern.source}\`\n\n~~~ output ~~~\n\n${this.#output.trim()}\n\n~~~ /output ~~~\n`,
+                `expected output to match pattern \`${pattern.source}\`\n\n~~~ output ~~~\n\n${this.#output}\n\n~~~ /output ~~~\n`,
             )
         }
+    }
+
+    assertOrderedOutput(...patterns: Array<RegExp | string>) {
+        let output = this.#output
+        patterns.forEach((pattern, i) => {
+            if (typeof pattern === 'string') {
+                assert.ok(
+                    output.includes(pattern),
+                    `expected output to include pattern ${i} \`${pattern}\`\n\n~~~ remaining output ~~~\n\n${output}\n\n~~~ /output ~~~\n`,
+                )
+                output = output.substring(
+                    output.indexOf(pattern) + pattern.length,
+                )
+            } else {
+                const match = output.match(pattern)
+                assert.ok(
+                    match !== null,
+                    `expected output to match pattern ${i}\n\nexpected: \`${pattern.source}\`\n\n~~~ remaining output ~~~\n\n${output}\n\n~~~ /output ~~~\n`,
+                )
+                if (typeof match.index === 'undefined') throw Error()
+                output = output.substring(match.index + match[0].length)
+            }
+        })
     }
 }
 
