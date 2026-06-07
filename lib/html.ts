@@ -75,8 +75,8 @@ export type HtmlEntrypointEvents = {
     entrypoints: [entrypoints: Array<EsbuildEntrypoint>]
     // aborted processing html on error
     error: [e: Error]
-    // new html output ready to write to watch dir
-    // this event is only for `serve` mode and does not rewrite hrefs
+    // new html output ready for `dank serve`
+    // this event is fired without rewriting hrefs
     output: [html: string]
 }
 

@@ -48,7 +48,7 @@ type WebpageRegistration = {
 
 export type UrlRewrite = {
     pattern: RegExp
-    url: string
+    url: `/${string}`
 }
 
 export type WebsiteRegistryEvents = {
@@ -103,8 +103,8 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         }
     }
 
-    get pageUrls(): Array<string> {
-        return Object.keys(this.#pages)
+    get pageUrls(): Array<`/${string}`> {
+        return Object.keys(this.#pages) as Array<`/${string}`>
     }
 
     get resolver(): Resolver {
@@ -522,7 +522,7 @@ export class WorkerBuildRegistry {
     }
 }
 
-const stripBuildDirPattern = /^build[/\\](dist|watch)/
+const stripBuildDirPattern = /^build[/\\]dist/
 
 function stripBuildDir(p: string): `/${string}` {
     return ensureWebPath(p.replace(stripBuildDirPattern, ''))

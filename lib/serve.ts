@@ -1,16 +1,17 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { extname, join } from 'node:path'
+import { rm } from 'node:fs/promises'
+import { extname } from 'node:path'
 import type { BuildContext } from 'esbuild'
 import { buildWebsite } from './build.ts'
 import { loadConfig, type ResolvedDankConfig } from './config.ts'
 import { createGlobalDefinitions } from './define.ts'
 import { LOG } from './developer.ts'
 import { esbuildDevContext } from './esbuild.ts'
-import type { HtmlEntrypoint } from './html.ts'
 import {
     createBuiltDistFilesFetcher,
+    createBuiltDistHtmlFileFetcher,
     createDevServeFilesFetcher,
     startWebServer,
+    type HtmlFileFetcher,
     type UrlRewriteProvider,
 } from './http.ts'
 import { WebsiteRegistry, type UrlRewrite } from './registry.ts'
@@ -40,13 +41,14 @@ async function startPreviewMode() {
             const mapping = c.pages[url as `/${string}`]
             return typeof mapping !== 'object' || !mapping.pattern
                 ? null
-                : { url, pattern: mapping.pattern }
+                : { url: url as `/${string}`, pattern: mapping.pattern }
         })
         .filter(mapping => mapping !== null)
     startWebServer(
         c,
         { urlRewrites } satisfies UrlRewriteProvider,
         frontend,
+        createBuiltDistHtmlFileFetcher(c.dirs, manifest),
         devServices,
     )
     const controller = new AbortController()
@@ -67,7 +69,7 @@ type BuildContextState =
 
 async function startDevMode() {
     const registry = new WebsiteRegistry(c)
-    await mkdir(c.dirs.buildWatch, { recursive: true })
+    const htmlFiles: Record<`/${string}`, string> = {}
     let buildContext: BuildContextState = null
 
     watch('dank.config.ts', async filename => {
@@ -143,7 +145,18 @@ async function startDevMode() {
         html.on('error', e =>
             console.log(`\u001b[31merror:\u001b[0m`, e.message),
         )
-        html.on('output', output => writeHtml(html, output))
+        html.on('output', output => {
+            const path: `/${string}` = `${html.url}/index.html`
+            htmlFiles[path] = output
+            LOG({
+                realm: 'serve',
+                message: 'updating html output',
+                data: {
+                    webpage: html.fsPath,
+                    path,
+                },
+            })
+        })
     })
 
     registry.on('workers', () => {
@@ -166,9 +179,16 @@ async function startDevMode() {
     // inital start of esbuild ctx
     resetBuildContext()
 
-    const frontend = createDevServeFilesFetcher(c.esbuildPort, c.dirs, registry)
+    const htmlFetcher: HtmlFileFetcher = url =>
+        Promise.resolve(htmlFiles[url] ?? null)
+    const frontend = createDevServeFilesFetcher(
+        c.esbuildPort,
+        c.dirs,
+        registry,
+        htmlFetcher,
+    )
     const devServices = launchDevServices()
-    startWebServer(c, registry, frontend, devServices)
+    startWebServer(c, registry, frontend, htmlFetcher, devServices)
 }
 
 async function startEsbuildWatch(
@@ -201,21 +221,6 @@ async function startEsbuildWatch(
     })
 
     return ctx
-}
-
-async function writeHtml(html: HtmlEntrypoint, output: string) {
-    const dir = join(c.dirs.buildWatch, html.url)
-    await mkdir(dir, { recursive: true })
-    const path = join(dir, 'index.html')
-    LOG({
-        realm: 'serve',
-        message: 'writing html output',
-        data: {
-            webpage: html.fsPath,
-            path,
-        },
-    })
-    await writeFile(path, output)
 }
 
 function launchDevServices(): DevServices {

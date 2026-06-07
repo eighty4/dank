@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import {
     createServer,
     type IncomingHttpHeaders,
@@ -10,9 +10,9 @@ import {
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import mime from 'mime'
+import type { ResolvedDankConfig } from './config.ts'
 import type { WebsiteManifest } from './dank.ts'
 import type { DankDirectories } from './dirs.ts'
-import type { ResolvedDankConfig } from './config.ts'
 import type { UrlRewrite, WebsiteRegistry } from './registry.ts'
 import type { DevServices } from './services.ts'
 
@@ -27,10 +27,15 @@ export type FrontendFetcher = (
     notFound: () => void,
 ) => void
 
+export type HtmlFileFetcher = (
+    url: `/${string}/index.html`,
+) => Promise<string | null>
+
 export function startWebServer(
     c: ResolvedDankConfig,
     urlRewriteProvider: UrlRewriteProvider,
     frontendFetcher: FrontendFetcher,
+    htmlFileFetcher: HtmlFileFetcher,
     devServices: DevServices,
 ) {
     const serverAddress = 'http://localhost:' + c.dankPort
@@ -45,9 +50,9 @@ export function startWebServer(
                     req,
                     url,
                     headers,
-                    c,
                     devServices,
                     urlRewriteProvider,
+                    htmlFileFetcher,
                     res,
                 ),
             )
@@ -66,19 +71,15 @@ async function onNotFound(
     req: IncomingMessage,
     url: URL,
     headers: Headers,
-    c: ResolvedDankConfig,
     devServices: DevServices,
     urlRewriteProvider: UrlRewriteProvider,
+    htmlFileFetcher: HtmlFileFetcher,
     res: ServerResponse,
 ) {
     if (req.method === 'GET') {
-        const urlRewrite = tryUrlRewrites(
-            c,
-            urlRewriteProvider.urlRewrites,
-            url,
-        )
+        const urlRewrite = tryUrlRewrites(urlRewriteProvider.urlRewrites, url)
         if (urlRewrite) {
-            streamFile(urlRewrite, res)
+            sendHtml(res, await htmlFileFetcher(urlRewrite))
             return
         }
     }
@@ -105,20 +106,13 @@ async function sendFetchResponse(res: ServerResponse, fetchResponse: Response) {
 }
 
 function tryUrlRewrites(
-    c: ResolvedDankConfig,
     urlRewrites: Array<UrlRewrite>,
     url: URL,
-): string | null {
+): `/${string}/index.html` | null {
     const urlRewrite = urlRewrites.find(urlRewrite =>
         urlRewrite.pattern.test(url.pathname),
     )
-    return urlRewrite
-        ? join(
-              c.isPreviewMode() ? c.dirs.buildDist : c.dirs.buildWatch,
-              urlRewrite.url,
-              'index.html',
-          )
-        : null
+    return urlRewrite ? `${urlRewrite.url}/index.html` : null
 }
 
 async function tryHttpServices(
@@ -178,6 +172,29 @@ function createLogWrapper(handler: RequestListener): RequestListener {
     }
 }
 
+// `dank preview` uses HtmlFileFetcher for serving index.html from a url rewrite
+// other index.html requests will be handled by FrontendFetcher and streamFile
+export function createBuiltDistHtmlFileFetcher(
+    dirs: DankDirectories,
+    manifest: WebsiteManifest,
+): HtmlFileFetcher {
+    return async url => {
+        if (
+            manifest.pageUrls.includes(
+                url.substring(
+                    0,
+                    url.lastIndexOf('/index.html'),
+                ) as `/${string}`,
+            )
+        ) {
+            const p = join(dirs.projectRootAbs, dirs.buildDist, url)
+            return readFile(p, 'utf8')
+        } else {
+            return null
+        }
+    }
+}
+
 export function createBuiltDistFilesFetcher(
     dirs: DankDirectories,
     manifest: WebsiteManifest,
@@ -213,6 +230,7 @@ export function createDevServeFilesFetcher(
     esbuildPort: number,
     dirs: DankDirectories,
     registry: WebsiteRegistry,
+    htmlFileFetcher: HtmlFileFetcher,
 ): FrontendFetcher {
     const proxyAddress = 'http://127.0.0.1:' + esbuildPort
     return (
@@ -221,8 +239,10 @@ export function createDevServeFilesFetcher(
         res: ServerResponse,
         notFound: () => void,
     ) => {
-        if (registry.pageUrls.includes(url.pathname)) {
-            streamFile(join(dirs.buildWatch, url.pathname, 'index.html'), res)
+        if (registry.pageUrls.includes(url.pathname as `/${string}`)) {
+            htmlFileFetcher(`${url.pathname as `/${string}`}/index.html`).then(
+                html => sendHtml(res, html),
+            )
         } else {
             const maybePublicPath = join(dirs.public, url.pathname)
             exists(maybePublicPath).then(fromPublic => {
@@ -340,6 +360,16 @@ function convertHeadersToFetch(from: IncomingHttpHeaders): Headers {
         }
     }
     return to
+}
+
+function sendHtml(res: ServerResponse, html: string | null) {
+    if (html) {
+        res.appendHeader('content-type', 'text/html')
+        res.write(html)
+    } else {
+        res.writeHead(404)
+    }
+    res.end()
 }
 
 function errorExit(msg: string): never {

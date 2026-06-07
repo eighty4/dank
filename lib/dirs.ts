@@ -3,8 +3,6 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 
 export type DankDirectories = {
     buildRoot: string
-    // output dir of html during `dank serve`
-    buildWatch: string
     buildDist: string
     pages: string
     pagesAbs: string
@@ -28,7 +26,6 @@ export async function defaultProjectDirs(
     return Object.freeze({
         buildRoot: 'build',
         buildDist: join('build', 'dist'),
-        buildWatch: join('build', 'watch'),
         pages,
         pagesAbs: join(projectRootAbs, pages),
         projectRootAbs,
