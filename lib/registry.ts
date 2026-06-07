@@ -71,6 +71,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
     // includes all hrefs found in <script src>, <link href> and Worker URLs
     // (excluding css bundles built from a js entrypoint)
     #entrypointHrefs: Record<string, string | null> = {}
+    #initialConfigSync: boolean = true
     #otherOutputs: Set<`/${string}`> | null = null
     #pages: Record<`/${string}`, WebpageRegistration> = {}
     readonly #resolver: Resolver
@@ -188,6 +189,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
 
     configSync() {
         this.#configDiff()
+        this.#initialConfigSync = false
     }
 
     files(): Array<`/${string}`> {
@@ -359,21 +361,22 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
             urlPath as `/${string}`,
             mapping.webpage,
         )
-        const urlRewrite = mapping.pattern
-            ? { pattern: mapping.pattern, url: urlPath }
-            : undefined
         this.#pages[urlPath as `/${string}`] = {
             pageUrl: urlPath as `/${string}`,
             fsPath: mapping.webpage,
             html,
-            urlRewrite,
+            urlRewrite: mapping.pattern
+                ? { pattern: mapping.pattern, url: urlPath }
+                : undefined,
             bundleEntrypoints: [],
         }
         html.on('entrypoints', entrypoints =>
             this.#setWebpageBundleEntrypoints(html.url, entrypoints),
         )
         this.emit('webpage', html)
-        html.emit('change')
+        if (!this.#initialConfigSync) {
+            html.emit('change')
+        }
     }
 
     #configPageUpdate(urlPath: `/${string}`, mapping: PageMapping) {
