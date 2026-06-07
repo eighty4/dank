@@ -27,7 +27,7 @@ pnpm create dank --out-dir www
 [Vite](https://vite.dev) is the right move for building a Single-Page Application.
 
 Dynamic content with Static-Site Generation or Server-Side Rendering should use
-[Astro](https://astro.build), [Next.js](https://nextjs.org) or [SvelteKit](https://svelte.dev).
+[Astro](https://astro.build).
 
 #### DANK is an ideal choice for multi-page websites deployed to a CDN that integrate with serverless components and APIs.
 
