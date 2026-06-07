@@ -186,4 +186,32 @@ export default defineConfig({
             await dankServing.assertFetchStatus('/dev.js', 200)
         })
     })
+
+    suite('`dank preview`', () => {
+        test('does not serve dev pages', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dev.html': '<script src="./dev.ts"></script>',
+                    'pages/dev.ts': 'console.log()',
+                },
+            })
+            await project.writeConfig(`\
+import {defineConfig} from '@eighty4/dank'
+export default defineConfig({
+    devPages: {
+        '/__': './dev.html',
+    },
+    pages: {
+        '/': './dank.html',
+    },
+})
+`)
+            using dankServing = await project.servePreview()
+            dankServing.on('error', assert.fail)
+            dankServing.on('exit', assert.fail)
+            await dankServing.start()
+            await dankServing.assertFetchStatus('/__', 404)
+            await dankServing.assertFetchStatus('/dev.js', 404)
+        })
+    })
 })
