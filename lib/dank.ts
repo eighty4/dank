@@ -2,19 +2,40 @@ import type { Plugin as EsbuildPlugin } from 'esbuild'
 
 export type DankMode = 'build' | 'preview' | 'serve'
 
+// input to DankConfigFunction detailing a DANK process
+export type DankDetails = {
+    dev: boolean
+    production: boolean
+    mode: DankMode
+}
+
+export type DankConfigFunction = (
+    dank: DankDetails,
+) => Partial<DankConfig> | Promise<Partial<DankConfig>>
+
+export function defineConfig(config: Partial<DankConfig>): Partial<DankConfig>
+export function defineConfig(config: DankConfigFunction): DankConfigFunction
+export function defineConfig(
+    config: Partial<DankConfig> | DankConfigFunction,
+): Partial<DankConfig> | DankConfigFunction {
+    return config
+}
+
 export type DankConfig = {
     // used for service worker caching
     buildTag?: string | BuildTagBuilder
 
-    // customize esbuild configs
+    // customize esbuild
     esbuild?: EsbuildConfig
 
-    // mapping url to html files in the project pages dir
-    // page url (map key) represents html output path in build dir
-    // regardless of the html path in the pages dir
-    // cdn url rewriting can be simulated with PageMapping
+    // explicit mapping of urls to webpages in the pages dir
+    // the url with be the html output path in `build/dist`
+    //   regardless of the html path in the pages dir
+    // PageMapping extends webpage mapping with simulating
+    //   of cdn style url rewrites
     pages: Record<`/${string}`, `${string}.html` | PageMapping>
 
+    // enable additional development pages only during `dank serve`
     devPages?: Record<`/__${string}`, `${string}.html` | DevPageMapping>
 
     // port of `dank serve` frontend dev server
@@ -24,7 +45,7 @@ export type DankConfig = {
     // port used for `dank preview` frontend dev server
     previewPort?: number
 
-    // dev services launched during `dank serve`
+    // dev services launched during `dank serve` and `dank preview`
     services?: Array<DevService>
 
     // generate a service worker with `dank build --service-worker`
@@ -42,9 +63,7 @@ export type BuildTagBuilder = (
     build: BuildTagParams,
 ) => Promise<string> | string
 
-// extend an html entrypoint with url rewriting similar to cdn configurations
-// after trying all webpage, bundle and asset paths, mapping patterns
-// will be tested in the alphabetical order of the webpage paths
+// a webpage mapping that can be extended with cdn style url rewrites
 export type PageMapping = {
     pattern?: RegExp
     webpage: `${string}.html`
@@ -55,6 +74,7 @@ export type DevPageMapping = {
     webpage: `${string}.html`
 }
 
+// a process that is started up with `dank serve` and `dank preview`
 export type DevService = {
     command: string
     cwd?: string
@@ -89,27 +109,7 @@ export type EsbuildLoader =
     | 'json'
     | 'text'
 
-// DankConfigFunction arg details about a dank process used when building DankConfig
-export type DankDetails = {
-    dev: boolean
-    production: boolean
-    mode: DankMode
-}
-
-export type DankConfigFunction = (
-    dank: DankDetails,
-) => Partial<DankConfig> | Promise<Partial<DankConfig>>
-
-export function defineConfig(config: Partial<DankConfig>): Partial<DankConfig>
-export function defineConfig(config: DankConfigFunction): DankConfigFunction
-export function defineConfig(
-    config: Partial<DankConfig> | DankConfigFunction,
-): Partial<DankConfig> | DankConfigFunction {
-    return config
-}
-
-// summary of a website build, written to `build` dir
-// and provided via ServiceWorkerParams to build a service worker from
+// written to `build/website.json` and an input of ServiceWorkerBuilder
 export type WebsiteManifest = {
     buildTag: string
     files: Array<`/${string}`>
@@ -120,19 +120,22 @@ export type ServiceWorkerParams = {
     website: WebsiteManifest
 }
 
+// result of a ServiceWorkerBuilder build
 export type ServiceWorkerBuild = {
-    // outputs will be written to the build's dist
-    // and added to the manifest written to website.json
+    // outputs will be written to `build/dist`
+    // and added to the WebsiteManifest written to `build/website.json`
     outputs: Array<{
         url: `/${string}.js`
         content: string
     }>
 }
 
+// the signature of DankConfig.serviceWorker
 export type ServiceWorkerBuilder = (
     params: ServiceWorkerParams,
 ) => ServiceWorkerBuild | Promise<ServiceWorkerBuild>
 
+// APIs that can be used by a ServiceWorkerBuilder
 export {
     createServiceWorker,
     type ServiceWorkerCaching,
@@ -142,4 +145,5 @@ export type AfterBuildArgs = {
     website: WebsiteManifest
 }
 
+// the signature of DankConfig.afterBuild
 export type AfterBuild = (args: AfterBuildArgs) => Promise<void> | void
