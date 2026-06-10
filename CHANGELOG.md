@@ -39,6 +39,7 @@
   both a string webpage mapping and a `DevPageMapping` configuration
 - Worker constructors with second arg options breaking swap of build output
   hashed worker URL
+- esbuild plugin for Worker registration no longer loads node_modules sources
 
 ## [v0.0.4] - 2026-02-04
 

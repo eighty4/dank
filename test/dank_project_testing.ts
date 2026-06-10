@@ -342,7 +342,10 @@ export class DankBuildResult {
     }
 
     assertSuccess() {
-        assert.ok(this.#success, '`dank build` did not succeed')
+        assert.ok(
+            this.#success,
+            `\`dank build\` did not succeed\n\n~~~ output ~~~\n\n${this.#output}\n\n~~~ /output ~~~\n`,
+        )
     }
 
     assertOutput(pattern: RegExp | string) {

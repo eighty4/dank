@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { suite, test } from 'node:test'
 import { createWorkerRegex } from '../lib/build.ts'
 import { createDank } from './dank_project_testing.ts'
@@ -26,6 +27,27 @@ w = 'w' // new SharedWorker('./partial-line.ts')`,
             const result = await project.build()
             result.assertSuccess()
             assert.deepEqual(await project.readBuildWorkersManifest(), [])
+        })
+
+        test('plugin does not load/parse node_modules contents', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.ts': `import { benchmark } from 'subsidized-food'\nbenchmark()`,
+                },
+            })
+            await mkdir(project.path('node_modules/subsidized-food'), {
+                recursive: true,
+            })
+            await writeFile(
+                project.path('node_modules/subsidized-food/package.json'),
+                `{"exports": {".": "./code.mjs"}}`,
+            )
+            await writeFile(
+                project.path('node_modules/subsidized-food/code.mjs'),
+                'export const benchmark = () => new Worker(new URL("wtf://homey"))',
+            )
+            const result = await project.build()
+            result.assertSuccess()
         })
 
         suite('rewriting worker url with build hash', () => {
@@ -201,6 +223,8 @@ new ${ctor}('./data-orchestration.ts')`,
                             `The ${ctor} entrypoint was found in "pages/dank.ts":`,
                             `pages/dank.ts:1:${'new ('.length + ctor.length}:`,
                             `1 │ new ${ctor}('./andmeneither.ts')`,
+                        )
+                        result.assertOrderedOutput(
                             `Could not find ${ctor} entrypoint "pages/notworker.ts"`,
                             `The ${ctor} entrypoint was found in "pages/dank.ts":`,
                             `pages/dank.ts:1:${'new ('.length + ctor.length}:`,

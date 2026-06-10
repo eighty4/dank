@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import {
     type BuildContext,
     type BuildFailure,
@@ -176,10 +176,20 @@ const WORKER_CTOR_REGEX =
     /new(?:\s|\r?\n)+(?<ctor>(?:Shared)?Worker)(?:\s|\r?\n)*\((?:\s|\r?\n)*(?<url>.*?)(?:\s|\r?\n)*(?<end>[\),])/g
 const WORKER_URL_REGEX = /^('.*'|".*")$/
 
+function inNodeModulesPattern(dirs: DankDirectories): RegExp {
+    return new RegExp(
+        '^' +
+            RegExp.escape(
+                `${dirs.projectRootAbs}${sep}${'node_modules'}${sep}`,
+            ),
+    )
+}
+
 export function workersPlugin(
     wr: WorkerBuildRegistry,
     mergeDevCtx?: (build: Metafile, wr: WorkerBuildRegistry) => void,
 ): Plugin {
+    const IN_NODE_MODULES = inNodeModulesPattern(wr.dirs)
     return {
         name: '@eighty4/dank/esbuild/workers',
         setup(build: PluginBuild) {
@@ -187,6 +197,9 @@ export function workersPlugin(
                 throw TypeError('plugin requires metafile')
 
             build.onLoad({ filter: /\.(t|m?j)s$/ }, async args => {
+                if (IN_NODE_MODULES.test(args.path)) {
+                    return null
+                }
                 let contents = await readFile(args.path, 'utf8')
                 let offset = 0
                 let errors: Array<PartialMessage> | undefined = undefined
