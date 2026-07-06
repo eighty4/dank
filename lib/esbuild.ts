@@ -459,7 +459,10 @@ async function enhanceEsbuildBuildFailure(
             m.text,
         )
         if (unresolvedEntrypointMatch) {
-            const p = unresolvedEntrypointMatch.groups!.p
+            const p = unresolvedEntrypointMatch.groups!.p.replace(
+                /^\.[\/\\]/,
+                '',
+            )
             const w = r.workers!.find(w => w.entrypoint.in === p)
             if (w) {
                 await enhanceUnresolvedWorkerEntrypointMessage(r, m, p, w)
