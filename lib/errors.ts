@@ -1,5 +1,14 @@
 import type { BuildFailure, Location, Message } from 'esbuild'
-import { bold, green, red, whiteOnRed, whiteOnYellow, yellow } from './ansi.ts'
+import {
+    bold,
+    gray,
+    grayOnGreen,
+    green,
+    red,
+    whiteOnRed,
+    whiteOnYellow,
+    yellow,
+} from './ansi.ts'
 
 // throw for user facing errors
 // throw Error to show a stacktrace
@@ -41,6 +50,12 @@ export function printEsbuildWarnings(warnings: BuildFailure['warnings']) {
     for (const warning of warnings) {
         printEsbuildMessage(label, warning)
     }
+}
+
+export function printEsbuildRecovered() {
+    console.log(
+        `   ${grayOnGreen(' DANK ')} ${green('✔')} ${gray('build recovered')}\n`,
+    )
 }
 
 function labelForErrors(): string {

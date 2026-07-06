@@ -14,6 +14,9 @@ export function bold(s: string): string {
 export const gray =
     COLOR_DEPTH === 1 ? NO_COLOR : (s: string) => `\u001b[90m${s}\u001b[0m`
 
+export const grayOnGreen =
+    COLOR_DEPTH === 1 ? NO_COLOR : (s: string) => `\u001b[90;42m${s}\u001b[0m`
+
 export const green =
     COLOR_DEPTH === 1 ? NO_COLOR : (s: string) => `\u001b[32m${s}\u001b[0m`
 

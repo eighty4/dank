@@ -19,6 +19,7 @@ import type { DankDirectories } from './dirs.ts'
 import {
     isEsbuildBuildFailure,
     printEsbuildBuildFailureMessages,
+    printEsbuildRecovered,
     printEsbuildWarnings,
 } from './errors.ts'
 import type {
@@ -373,10 +374,16 @@ function errorsPlugin(r: WebsiteRegistry): Plugin {
             if (!build.initialOptions.metafile)
                 throw TypeError('plugin requires metafile')
 
+            let prevHadErrors = false
+
             build.onEnd(async (result: BuildResult<{ metafile: true }>) => {
                 if (result.errors.length) {
                     await enhanceEsbuildBuildFailure(r, result)
                     printEsbuildBuildFailureMessages(result)
+                    prevHadErrors = true
+                } else if (prevHadErrors) {
+                    printEsbuildRecovered()
+                    prevHadErrors = false
                 }
             })
         },
