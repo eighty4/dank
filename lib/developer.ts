@@ -3,6 +3,7 @@ import { mkdir, rm } from 'node:fs/promises'
 import os from 'node:os'
 import { dirname, resolve } from 'node:path'
 import packageJson from '../package.json' with { type: 'json' }
+import { gray } from './ansi.ts'
 
 const CONSOLE =
     process.env.DANK_LOG_CONSOLE === '1' ||
@@ -155,7 +156,7 @@ async function prepareLogFile() {
     }
     await mkdir(dirname(path), { recursive: true })
     stream = createWriteStream(path, { flags: 'a' })
-    console.log('debug logging to', FILE)
+    console.log(gray('debug logging to ' + FILE))
     logSystemDetails()
 }
 

@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises'
 import { extname } from 'node:path'
 import type { BuildContext } from 'esbuild'
-import { red } from './ansi.ts'
+import { bold, green, red } from './ansi.ts'
 import { buildWebsite } from './build.ts'
 import { loadConfig, type ResolvedDankConfig } from './config.ts'
 import { createGlobalDefinitions } from './define.ts'
@@ -240,28 +240,28 @@ function launchDevServices(): DevServices {
         console.log(formatServiceLabel(label), 'starting'),
     )
     services.on('stdout', (label, output) =>
-        printServiceOutput(label, 32, output),
+        printServiceOutput(label, green, output),
     )
     services.on('stderr', (label, output) =>
-        printServiceOutput(label, 31, output),
+        printServiceOutput(label, red, output),
     )
     return services
 }
 
 function formatServiceLabel(label: ManagedServiceLabel): string {
-    return `| \u001b[2m${label.cwd}\u001b[22m ${label.command} |`
+    return `${bold('|')} ${label.cwd} ${label.command} ${bold('|')}`
 }
 
 function formatServiceOutputLabel(
     label: ManagedServiceLabel,
-    color: 31 | 32,
+    color: (s: string) => string,
 ): string {
-    return `\u001b[${color}m${formatServiceLabel(label)}\u001b[39m`
+    return color(formatServiceLabel(label))
 }
 
 function printServiceOutput(
     label: ManagedServiceLabel,
-    color: 31 | 32,
+    color: (s: string) => string,
     output: Array<string>,
 ) {
     const formattedLabel = formatServiceOutputLabel(label, color)
