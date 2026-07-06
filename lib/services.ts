@@ -5,52 +5,28 @@ import {
     spawn,
 } from 'node:child_process'
 import EventEmitter from 'node:events'
-import { basename, isAbsolute, resolve } from 'node:path'
+import { isAbsolute, resolve } from 'node:path'
 import type { DevService, ResolvedDankConfig } from './config.ts'
-
-export class ManagedServiceLabel {
-    #command: string
-    #cwd: string
-
-    constructor(spec: DevService) {
-        this.#command = spec.command
-        this.#cwd = !spec.cwd
-            ? './'
-            : spec.cwd.startsWith('/')
-              ? `/.../${basename(spec.cwd)}`
-              : spec.cwd.startsWith('.')
-                ? spec.cwd
-                : `./${spec.cwd}`
-    }
-
-    get command(): string {
-        return this.#command
-    }
-
-    get cwd(): string {
-        return this.#cwd
-    }
-}
 
 export type HttpService = NonNullable<DevService['http']>
 
 export type DevServiceEvents = {
-    error: [label: ManagedServiceLabel, cause: string]
-    exit: [label: ManagedServiceLabel, code: number | string]
-    launch: [label: ManagedServiceLabel]
-    stdout: [label: ManagedServiceLabel, output: Array<string>]
-    stderr: [label: ManagedServiceLabel, output: Array<string>]
+    error: [label: string, cause: string]
+    exit: [label: string, code: number | string]
+    launch: [label: string]
+    stdout: [label: string, output: Array<string>]
+    stderr: [label: string, output: Array<string>]
 }
 
 class ManagedService extends EventEmitter<DevServiceEvents> {
-    #label: ManagedServiceLabel
+    #label: string
     #process: ChildProcess | null
     #spec: DevService
     // #status: ManagedServiceStatus = 'starting'
 
-    constructor(spec: DevService) {
+    constructor(label: string, spec: DevService) {
         super()
-        this.#label = new ManagedServiceLabel(spec)
+        this.#label = label
         this.#spec = spec
         this.#process = this.#start()
     }
@@ -188,8 +164,11 @@ export class DevServices extends EventEmitter<DevServiceEvents> {
     #start(
         services: NonNullable<ResolvedDankConfig['services']>,
     ): Array<ManagedService> {
-        return services.map(spec => {
-            const service = new ManagedService(spec)
+        return services.map((spec, i) => {
+            const service = new ManagedService(
+                spec.label ?? `services[${i}]`,
+                spec,
+            )
             service.on('error', (label, cause) =>
                 this.emit('error', label, cause),
             )

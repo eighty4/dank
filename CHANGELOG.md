@@ -20,6 +20,8 @@
 - Enhancing `esbuild.BuildFailure` messages using DANK `WebsiteRegistry`
   context, so an unresolved Worker entrypoint erroring will include relevant
   help text and source location
+- Dev services can be labeled with an optional `dank.config.ts` string
+  for cleaner `dank serve` output
 
 ### Changed
 

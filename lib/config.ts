@@ -422,6 +422,11 @@ function validateDevServices(services: DankConfig['services']) {
     }
     for (let i = 0; i < services.length; i++) {
         const s = services[i]
+        if (!!s.label && typeof s.label !== 'string') {
+            throw new DankError(
+                `DankConfig.services[${i}].label must be a string`,
+            )
+        }
         if (s.command === null || typeof s.command === 'undefined') {
             throw new DankError(`DankConfig.services[${i}].command is required`)
         } else if (typeof s.command !== 'string' || s.command.length === 0) {

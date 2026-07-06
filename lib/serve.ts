@@ -16,7 +16,7 @@ import {
     type UrlRewriteProvider,
 } from './http.ts'
 import { WebsiteRegistry, type UrlRewrite } from './registry.ts'
-import { DevServices, type ManagedServiceLabel } from './services.ts'
+import { DevServices } from './services.ts'
 import { watch } from './watch.ts'
 
 let c: ResolvedDankConfig
@@ -248,19 +248,19 @@ function launchDevServices(): DevServices {
     return services
 }
 
-function formatServiceLabel(label: ManagedServiceLabel): string {
-    return `${bold('|')} ${label.cwd} ${label.command} ${bold('|')}`
+function formatServiceLabel(label: string): string {
+    return `${bold('|')} ${label} ${bold('|')}`
 }
 
 function formatServiceOutputLabel(
-    label: ManagedServiceLabel,
+    label: string,
     color: (s: string) => string,
 ): string {
     return color(formatServiceLabel(label))
 }
 
 function printServiceOutput(
-    label: ManagedServiceLabel,
+    label: string,
     color: (s: string) => string,
     output: Array<string>,
 ) {

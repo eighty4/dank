@@ -76,6 +76,7 @@ export type DevPageMapping = {
 
 // a process that is started up with `dank serve` and `dank preview`
 export type DevService = {
+    label?: string
     command: string
     cwd?: string
     env?: Record<string, string>
