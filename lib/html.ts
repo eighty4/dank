@@ -451,6 +451,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         }
     }
 
+    // todo what to do?
     #parseImport(
         type: ImportedScript['type'],
         href: string,

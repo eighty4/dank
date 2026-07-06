@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises'
-import { join, sep } from 'node:path'
+import { extname, join, sep } from 'node:path'
 import {
     type BuildContext,
     type BuildFailure,
@@ -27,6 +27,10 @@ import type {
     WorkerBuildRegistry,
     WorkerManifest,
 } from './registry.ts'
+
+const EXT_CSS_JS_TS = /\.(tsx?|jsx?|css|mts|mjs)$/
+
+const EXT_JS_TS = /\.(tsx?|jsx?|mjs|mts)$/
 
 export type EsbuildEntrypoint = { in: string; out: string }
 
@@ -168,14 +172,15 @@ function mapEntryPointPaths(entryPoints: Array<EsbuildEntrypoint>) {
     return entryPoints.map(entryPoint => {
         return {
             in: entryPoint.in,
-            out: entryPoint.out.replace(/\.(tsx?|jsx?|css)$/, ''),
+            out: entryPoint.out.replace(EXT_CSS_JS_TS, ''),
         }
     })
 }
 
 const WORKER_CTOR_REGEX =
     /new(?:\s|\r?\n)+(?<ctor>(?:Shared)?Worker)(?:\s|\r?\n)*\((?:\s|\r?\n)*(?<url>.*?)(?:\s|\r?\n)*(?<end>[\),])/g
-const WORKER_URL_REGEX = /^('.*'|".*")$/
+const WORKER_URL_STRING_REGEX = /^('.*'|".*")$/
+const WORKER_URL_REGEX = /^.*\.(ts|js|mts|mjs)$/
 
 function inNodeModulesPattern(dirs: DankDirectories): RegExp {
     return new RegExp(
@@ -197,7 +202,7 @@ export function workersPlugin(
             if (!build.initialOptions.metafile)
                 throw TypeError('plugin requires metafile')
 
-            build.onLoad({ filter: /\.(t|m?j)s$/ }, async args => {
+            build.onLoad({ filter: EXT_JS_TS }, async args => {
                 if (IN_NODE_MODULES.test(args.path)) {
                     return null
                 }
@@ -208,10 +213,34 @@ export function workersPlugin(
                 for (const workerCtorMatch of contents.matchAll(
                     WORKER_CTOR_REGEX,
                 )) {
-                    if (!WORKER_URL_REGEX.test(workerCtorMatch.groups!.url)) {
+                    if (
+                        !WORKER_URL_STRING_REGEX.test(
+                            workerCtorMatch.groups!.url,
+                        )
+                    ) {
                         if (!errors) errors = []
                         errors.push(
                             invalidWorkerUrlCtorArg(
+                                buildMessageLocation(
+                                    args.path,
+                                    contents,
+                                    workerCtorMatch.index,
+                                    workerCtorMatch[0].length,
+                                ),
+                                workerCtorMatch,
+                            ),
+                        )
+                        continue
+                    }
+                    const originalCtorSrc =
+                        workerCtorMatch.groups!.url.substring(
+                            1,
+                            workerCtorMatch.groups!.url.length - 1,
+                        )
+                    if (!WORKER_URL_REGEX.test(originalCtorSrc)) {
+                        if (!errors) errors = []
+                        errors.push(
+                            invalidWorkerUrlExtension(
                                 buildMessageLocation(
                                     args.path,
                                     contents,
@@ -231,11 +260,6 @@ export function workersPlugin(
                             args.path,
                         )
                     }
-                    const originalCtorSrc =
-                        workerCtorMatch.groups!.url.substring(
-                            1,
-                            workerCtorMatch.groups!.url.length - 1,
-                        )
                     const workerProjectPath =
                         wr.resolver.resolvePagesRelativeHrefInProjectDir(
                             clientScript,
@@ -264,7 +288,7 @@ export function workersPlugin(
                         out:
                             '.lib/' +
                             workerProjectPath
-                                .replace(/\.(t|m?j)s$/, '.js')
+                                .replace(EXT_JS_TS, '.js')
                                 .replaceAll('\\', '/'),
                     }
                     const placeholderCtorSrc: `/${string}` = `/${entrypoint.out}`
@@ -287,7 +311,7 @@ export function workersPlugin(
                         placeholderCtorSrc,
                     })
                 }
-                const loader = args.path.endsWith('ts') ? 'ts' : 'js'
+                const loader = loaderFromExt(extname(args.path))
                 return { contents, errors, loader }
             })
 
@@ -302,6 +326,23 @@ export function workersPlugin(
                 })
             }
         },
+    }
+}
+
+function loaderFromExt(ext: string): 'ts' | 'tsx' | 'jsx' | 'js' {
+    switch (ext) {
+        case '.ts':
+        case '.mts':
+            return 'ts'
+        case '.tsx':
+            return 'tsx'
+        case '.js':
+        case '.mjs':
+            return 'js'
+        case '.jsx':
+            return 'jsx'
+        default:
+            throw TypeError()
     }
 }
 
@@ -363,6 +404,22 @@ function invalidWorkerUrlCtorArg(
         id: 'worker-url-unresolvable',
         text: `The ${workerCtorMatch.groups!.ctor} constructor URL arg \`${workerCtorMatch.groups!.url}\` must be a relative module path`,
         location,
+    }
+}
+
+function invalidWorkerUrlExtension(
+    location: Location,
+    workerCtorMatch: RegExpExecArray,
+): PartialMessage {
+    const url = workerCtorMatch.groups!.url.slice(1, -1)
+    return {
+        id: 'worker-url-unsupported-ext',
+        text: `The ${workerCtorMatch.groups!.ctor} URL \`${url}\` needs a \`ts\` or \`js\` extension`,
+        location: {
+            ...location,
+            column: location.column + workerCtorMatch[0].lastIndexOf('.'),
+            length: url.length - url.lastIndexOf('.'),
+        },
     }
 }
 
