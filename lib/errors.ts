@@ -31,31 +31,46 @@ export function isEsbuildBuildFailure(e: unknown): e is BuildFailure {
     )
 }
 
+export function printEsbuildRecovered() {
+    console.log(
+        `\n   ${grayOnGreen(' DANK ')} ${green('✔')} ${gray('build recovered')}\n`,
+    )
+}
+
 export function printEsbuildBuildFailureMessages(
     e: Pick<BuildFailure, 'errors' | 'warnings'>,
 ) {
+    const lines: Array<Array<string>> = []
     if (e.warnings.length) {
-        printEsbuildWarnings(e.warnings)
+        const label = labelForWarnings()
+        lines.push(
+            ...e.warnings.map(warning =>
+                makePrintableEsbuildMessage(label, warning),
+            ),
+        )
     }
     if (e.errors.length) {
         const label = labelForErrors()
-        for (const error of e.errors) {
-            printEsbuildMessage(label, error)
-        }
+        lines.push(
+            ...e.errors.map(error => makePrintableEsbuildMessage(label, error)),
+        )
     }
+    console.log(joinAndPadBuildMessages(lines))
 }
 
 export function printEsbuildWarnings(warnings: BuildFailure['warnings']) {
     const label = labelForWarnings()
-    for (const warning of warnings) {
-        printEsbuildMessage(label, warning)
-    }
+    console.log(
+        joinAndPadBuildMessages(
+            warnings.map(warning =>
+                makePrintableEsbuildMessage(label, warning),
+            ),
+        ),
+    )
 }
 
-export function printEsbuildRecovered() {
-    console.log(
-        `   ${grayOnGreen(' DANK ')} ${green('✔')} ${gray('build recovered')}\n`,
-    )
+function joinAndPadBuildMessages(messages: Array<Array<string>>): string {
+    return `\n${messages.map(msgs => msgs.join('\n')).join('\n\n')}\n`
 }
 
 function labelForErrors(): string {
@@ -66,30 +81,31 @@ function labelForWarnings(): string {
     return `${yellow('✘')} ${whiteOnYellow(' WARNING ')}`
 }
 
-function printEsbuildMessage(label: string, message: Message) {
-    console.log(label, bold(message.text))
+function makePrintableEsbuildMessage(
+    label: string,
+    message: Message,
+): Array<string> {
+    const lines = [`${label} ${bold(message.text)}`]
     if (message.location) {
-        printEsbuildLocation(message.location)
+        lines.push(...makePrintableEsbuildLocation(message.location))
     }
     for (const note of message.notes) {
-        console.log(`\n  ${note.text}`)
+        lines.push('', `  ${note.text}`)
         if (note.location) {
-            printEsbuildLocation(note.location)
+            lines.push('', ...makePrintableEsbuildLocation(note.location))
         }
     }
-    console.log()
+    return lines
 }
 
-function printEsbuildLocation(location: Location) {
+function makePrintableEsbuildLocation(location: Location): Array<string> {
     const { file, line, column, lineText, length } = location
-    console.log(`\n    ${file}:${line}:${column}:`)
     const lineBeforeHighlight = lineText.substring(0, column)
     const lineHighlight = lineText.substring(column, column + length)
     const lineAfterHighlight = lineText.substring(column + length)
-    console.log(
+    return [
+        `    ${file}:${line}:${column}:`,
         `${(line + ' ').padStart(8)}│ ${lineBeforeHighlight}${green(lineHighlight)}${lineAfterHighlight}`,
-    )
-    console.log(
         `${' '.padStart(8)}╵ ${' '.padStart(lineBeforeHighlight.length)}${green(''.padStart(lineHighlight.length, '~'))}`,
-    )
+    ]
 }
