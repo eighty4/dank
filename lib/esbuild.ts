@@ -281,8 +281,7 @@ export function workersPlugin(
                         continue
                     }
                     const ctor = workerCtorMatch.groups!.ctor as
-                        | 'Worker'
-                        | 'SharedWorker'
+                        'Worker' | 'SharedWorker'
                     const entrypoint: EsbuildEntrypoint = {
                         in: workerProjectPath,
                         out:

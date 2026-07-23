@@ -32,10 +32,7 @@ export type LogEvent = {
 }
 
 type LogEventData =
-    | LogEventDatum
-    | LogEventDataArray
-    | LogEventDataRecord
-    | LogEventDataSet
+    LogEventDatum | LogEventDataArray | LogEventDataRecord | LogEventDataSet
 
 type LogEventDatum = boolean | number | string | null | undefined
 

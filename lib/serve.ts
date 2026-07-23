@@ -62,11 +62,7 @@ async function startPreviewMode() {
 }
 
 type BuildContextState =
-    | BuildContext
-    | 'starting'
-    | 'dirty'
-    | 'disposing'
-    | null
+    BuildContext | 'starting' | 'dirty' | 'disposing' | null
 
 async function startDevMode() {
     const registry = new WebsiteRegistry(c)

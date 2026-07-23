@@ -132,8 +132,7 @@ await Promise.all(
 const latestVersion = await getLatestVersion('@eighty4/dank')
 
 type PackageManagerJson =
-    | ''
-    | `\n    "packageManager": "${'npm' | 'pnpm'}@${string}",`
+    '' | `\n    "packageManager": "${'npm' | 'pnpm'}@${string}",`
 
 const packageManagerJson =
     await (async function resolveVersion(): Promise<PackageManagerJson> {

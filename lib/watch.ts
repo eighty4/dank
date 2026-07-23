@@ -22,9 +22,7 @@ export async function watch(
 export async function watch(
     p: string,
     signalFireOrOpts:
-        | AbortSignal
-        | WatchCallback
-        | WatchOptionsWithStringEncoding,
+        AbortSignal | WatchCallback | WatchOptionsWithStringEncoding,
     fireOrUndefined?: WatchCallback,
 ): Promise<void> {
     let opts: WatchOptionsWithStringEncoding | undefined
