@@ -12,6 +12,8 @@ import { Readable } from 'node:stream'
 import mime from 'mime'
 import type { ResolvedDankConfig } from './config.ts'
 import type { WebsiteManifest } from './dank.ts'
+import { DANK_DEV_API_PATH } from './dev_api.ts'
+import { dankDevApi } from './dev_client.ts'
 import type { DankDirectories } from './dirs.ts'
 import type { UrlRewrite, WebsiteRegistry } from './registry.ts'
 import type { DevServices } from './services.ts'
@@ -43,17 +45,21 @@ export function startWebServer(
         } else {
             const url = new URL(serverAddress + req.url)
             const headers = convertHeadersToFetch(req.headers)
-            frontendFetcher(url, headers, res, () =>
-                onNotFound(
-                    req,
-                    url,
-                    headers,
-                    devServices,
-                    urlRewriteProvider,
-                    htmlFileFetcher,
-                    res,
-                ),
-            )
+            if (url.pathname === DANK_DEV_API_PATH) {
+                invokeDankDevApiMethod(req, res, c)
+            } else {
+                frontendFetcher(url, headers, res, () =>
+                    onNotFound(
+                        req,
+                        url,
+                        headers,
+                        devServices,
+                        urlRewriteProvider,
+                        htmlFileFetcher,
+                        res,
+                    ),
+                )
+            }
         }
     }
     createServer(c.flags.logHttp ? createLogWrapper(handler) : handler).listen(
@@ -63,6 +69,40 @@ export function startWebServer(
         c.isPreviewMode() ? 'preview' : 'dev',
         `server is live at http://127.0.0.1:${c.dankPort}`,
     )
+}
+
+function invokeDankDevApiMethod(
+    req: IncomingMessage,
+    res: ServerResponse,
+    c: ResolvedDankConfig,
+) {
+    if (req.method !== 'POST') {
+        res.writeHead(405)
+        res.end()
+    } else if (!req.headers['content-type']?.startsWith('application/json')) {
+        res.writeHead(400)
+        res.end()
+    } else {
+        collectReqBody(req)
+            .then(apiReq => {
+                if (apiReq === null) {
+                    res.writeHead(400)
+                    res.end()
+                } else {
+                    return dankDevApi(c, JSON.parse(apiReq)).then(apiRes => {
+                        res.writeHead(200, {
+                            'content-type': 'application/json;charset=utf-8',
+                        })
+                        res.write(JSON.stringify(apiRes))
+                        res.end()
+                    })
+                }
+            })
+            .catch(() => {
+                res.writeHead(500)
+                res.end()
+            })
+    }
 }
 
 async function onNotFound(

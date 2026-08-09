@@ -9,6 +9,5 @@
         "types": ["node"],
         "noEmit": false
     },
-    "files": ["client/Client.Imports.d.ts"],
     "include": ["lib/*.ts"]
 }

@@ -1,4 +1,6 @@
-export type MenuPane = 'channels' | 'opfs' | 'workers' | 'pages'
+import type { MenuPane } from '../../lib/dev_api.ts'
+
+export type { MenuPane } from '../../lib/dev_api.ts'
 
 export type MenuPaneSelection = {
     pane: MenuPane
@@ -14,10 +16,6 @@ export class PaneSelectionEvent extends CustomEvent<MenuPaneSelection> {
             },
         })
     }
-
-    get type() {
-        return PaneSelectionEvent.TYPE
-    }
 }
 
 export class DankDevMenu extends HTMLElement {
@@ -27,8 +25,7 @@ export class DankDevMenu extends HTMLElement {
     constructor() {
         super()
         this.innerHTML = `\
-<div id="menu" role="tabpanel">
-    <div class="egg"></div>
+<div id="menu" class="menu" role="tabpanel">
     <div class="button" data-pane="workers" role="tab" aria-selected="false">
         <div class="mask-icon p-workers"></div>
         <span class="label">workers</span>
@@ -45,6 +42,8 @@ export class DankDevMenu extends HTMLElement {
         <div class="mask-icon p-dev-pages"></div>
         <span class="label">dev pages</span>
     </div>
+    <div class="flex-space"></div>
+    <div class="icon-button mask-icon close"></div>
 </div>
 `
         for (const button of this.querySelectorAll<HTMLElement>(
@@ -54,6 +53,10 @@ export class DankDevMenu extends HTMLElement {
             this.#buttons[pane] = button
             button.addEventListener('click', () => this.#onSelected(pane))
         }
+        this.querySelector('.icon-button.close')!.addEventListener(
+            'click',
+            this.#onClose,
+        )
     }
 
     notify(pane: MenuPane) {
@@ -67,8 +70,15 @@ export class DankDevMenu extends HTMLElement {
         this.#buttons[pane]!.click()
     }
 
+    #onClose = () => {
+        this.dispatchEvent(new CustomEvent('close-ui'))
+    }
+
     #onSelected(pane: MenuPane) {
         if (this.#selected) {
+            if (this.#selected.dataset['pane'] === pane) {
+                return
+            }
             this.#selected.classList.remove('selected')
             this.#selected.ariaSelected = 'false'
         }
@@ -80,4 +90,25 @@ export class DankDevMenu extends HTMLElement {
     }
 }
 
+export class DankDevMenuButton extends HTMLElement {
+    constructor(
+        iconClass: string,
+        labelText: string,
+        selected: boolean = false,
+    ) {
+        super()
+        this.classList.add('button')
+        const icon = document.createElement('span')
+        const label = document.createElement('span')
+        icon.classList.add('mask-icon', iconClass)
+        label.classList.add('label')
+        label.textContent = labelText
+        this.append(icon, label)
+        if (selected) {
+            this.classList.add('selected')
+        }
+    }
+}
+
 customElements.define('dank-dev-ui-menu', DankDevMenu)
+customElements.define('dank-dev-ui-menu-button', DankDevMenuButton)

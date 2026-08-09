@@ -501,7 +501,7 @@ function normalizeDevPages(
         for (const [url, mapping] of Object.entries(pages)) {
             if (typeof mapping === 'string') {
                 result[url] = {
-                    label: '',
+                    label: url,
                     webpage: mapping,
                 }
             } else {

@@ -1,5 +1,5 @@
 export function copy(s: string) {
-    navigator.clipboard.writeText(s).then(() => console.log('copied'))
+    navigator.clipboard.writeText(s).then()
 }
 
 export function isChromium(): boolean {

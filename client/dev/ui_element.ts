@@ -24,6 +24,7 @@ function readOpenPaneFromLocalStorage(): MenuPane | null {
         case 'channels':
         case 'opfs':
         case 'workers':
+        case 'pages':
             return pane
         default:
             return null
@@ -58,6 +59,7 @@ export class DankDevUI extends HTMLElement {
     <div id="placement">
         <dank-dev-ui-activator></dank-dev-ui-activator>
         <div id="ui">
+            <div id="logo"><div class="egg"></div></div>
             <dank-dev-ui-menu></dank-dev-ui-menu>
             <div id="pane"></div>
         </div>
@@ -75,6 +77,7 @@ export class DankDevUI extends HTMLElement {
         this.#menu.addEventListener('pane-selection', ((
             e: PaneSelectionEvent,
         ) => this.#changePane(e.detail.pane)) as (e: Event) => void)
+        this.#menu.addEventListener('close-ui', () => this.deactivate())
     }
 
     isActive(): boolean {
@@ -87,8 +90,6 @@ export class DankDevUI extends HTMLElement {
             this.#menu.select(readOpenPaneFromLocalStorage() ?? 'workers')
         }
         this.#shadow.getElementById('ui')!.classList.add('open')
-        this.style.position = 'fixed'
-        this.style.top = this.style.left = '0'
     }
 
     deactivate() {

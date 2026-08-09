@@ -2,6 +2,47 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { join } from 'node:path/posix'
 import type { ResolvedDankConfig } from './config.ts'
+import type {
+    DankDevApiMethodKind,
+    DankDevApiRequest,
+    DankDevApiResponse,
+    DankDevPage,
+} from './dev_api.ts'
+
+export async function dankDevApi<
+    K extends DankDevApiMethodKind,
+    REQ extends DankDevApiRequest<K>,
+>(c: ResolvedDankConfig, req: REQ): Promise<DankDevApiResponse<K>> {
+    return await apiHandlers[req.kind](c, req)
+}
+
+type DankDevApiHandlers = {
+    [K in DankDevApiMethodKind]: DankDevApiHandler<K>
+}
+
+type DankDevApiHandler<K extends DankDevApiMethodKind> = (
+    c: ResolvedDankConfig,
+    req: DankDevApiRequest<K>,
+) => Promise<DankDevApiResponse<K>>
+
+const apiHandlers: DankDevApiHandlers = {
+    'dev-pages': fetchDevPages,
+}
+
+async function fetchDevPages(
+    c: ResolvedDankConfig,
+    _: DankDevApiRequest<'dev-pages'>,
+): Promise<DankDevApiResponse<'dev-pages'>> {
+    const pages: Array<DankDevPage> = Object.entries(c.devPages).map(
+        ([url, mapping]) => {
+            return {
+                url: url as `/${string}`,
+                label: mapping.label || mapping.webpage,
+            }
+        },
+    )
+    return { kind: 'dev-pages', pages }
+}
 
 const [BOOTSTRAP_DW_JS, BOOTSTRAP_SW_JS, CLIENT_JS] = (() => {
     const clientRoot = resolve(import.meta.dirname, join('../client/build'))
