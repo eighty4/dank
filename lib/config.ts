@@ -9,7 +9,7 @@ import type {
     PageMapping,
     ServiceWorkerBuilder,
 } from './dank.ts'
-import { LOG } from './developer.ts'
+import { LOG } from './debug_log.ts'
 import { defaultProjectDirs, type DankDirectories } from './dirs.ts'
 import {
     resolveFlags as lookupDankFlags,

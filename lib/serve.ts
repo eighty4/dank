@@ -5,7 +5,7 @@ import { bold, green, red } from './ansi.ts'
 import { buildWebsite } from './build.ts'
 import { loadConfig, type ResolvedDankConfig } from './config.ts'
 import { createGlobalDefinitions } from './define.ts'
-import { LOG } from './developer.ts'
+import { LOG } from './debug_log.ts'
 import { esbuildDevContext } from './esbuild.ts'
 import {
     createBuiltDistFilesFetcher,

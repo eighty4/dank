@@ -13,7 +13,7 @@ import {
 } from 'parse5'
 import type { ResolvedDankConfig } from './config.ts'
 import { PageClientJS } from './dev_client.ts'
-import { LOG } from './developer.ts'
+import { LOG } from './debug_log.ts'
 import type { Resolver } from './dirs.ts'
 import { DankError } from './errors.ts'
 import type { EsbuildEntrypoint } from './esbuild.ts'

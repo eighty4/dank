@@ -6,7 +6,7 @@ import type { Plugin, OnLoadArgs, PluginBuild } from 'esbuild'
 
 const projectDir = resolve(join(import.meta.dirname, '..'))
 const libJsDir = join(projectDir, 'lib_js')
-await rm(join(libJsDir, 'developer.js'), { force: true })
+await rm(join(libJsDir, 'debug_log.js'), { force: true })
 
 await esbuild.build({
     allowOverwrite: true,
@@ -29,7 +29,7 @@ function plugin(): Plugin {
         setup(build: PluginBuild) {
             build.onLoad({ filter: /\.js$/ }, async (args: OnLoadArgs) => {
                 return {
-                    contents: stripDeveloperLogging(
+                    contents: stripDebugLogging(
                         await readFile(args.path, 'utf8'),
                     ),
                     loader: 'js',
@@ -39,10 +39,10 @@ function plugin(): Plugin {
     }
 }
 
-function stripDeveloperLogging(contents: string): string {
+function stripDebugLogging(contents: string): string {
     return contents
         .replace(
-            /import\s*{\s*LOG\s*}\s*from\s*['"]\.\/developer.js['"];?/g,
+            /import\s*{\s*LOG\s*}\s*from\s*['"]\.\/debug_log\.js['"];?/g,
             '',
         )
         .replace(/(?<!\.)LOG[\w$]*\s*\((?:[^()]+|\([^()]*\))*\);?/g, '')
