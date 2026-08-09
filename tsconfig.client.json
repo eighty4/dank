@@ -1,11 +1,21 @@
 {
     "extends": "./tsconfig.json",
     "compilerOptions": {
-        "lib": ["DOM"],
+        "lib": ["ES2022", "DOM", "WebWorker"],
         "rootDir": "client",
+        "types": [],
         "noEmit": true
     },
-    "files": ["client/Client.d.ts"],
-    "include": ["client/*.ts"],
+    "files": [
+        "client/Client.Imports.d.ts",
+        "client/Client.Globals.d.ts",
+        "client/Client.UserAgentData.d.ts"
+    ],
+    "include": [
+        "client/*.ts",
+        "client/dev/*.ts",
+        "client/dev/**/*.css",
+        "client/dev/**/*.svg"
+    ],
     "exclude": ["client/ServiceWorker.*"]
 }

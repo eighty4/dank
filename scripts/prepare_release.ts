@@ -9,18 +9,18 @@ const libJsDir = join(projectDir, 'lib_js')
 await rm(join(libJsDir, 'developer.js'), { force: true })
 
 await esbuild.build({
-    logLevel: 'info',
     allowOverwrite: true,
     absWorkingDir: libJsDir,
+    bundle: false,
     entryPoints: await readdir(libJsDir),
+    format: 'esm',
+    logLevel: 'info',
+    minify: false,
     outdir: libJsDir,
+    plugins: [plugin()],
+    platform: 'node',
     treeShaking: true,
     target: 'ES2024',
-    bundle: false,
-    minify: false,
-    format: 'esm',
-    platform: 'node',
-    plugins: [plugin()],
 })
 
 function plugin(): Plugin {

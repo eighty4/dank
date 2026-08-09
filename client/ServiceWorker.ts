@@ -13,7 +13,6 @@ self.addEventListener('activate', (e: ExtendableEvent) =>
 self.addEventListener('fetch', (e: FetchEvent) =>
     e.respondWith(handleRequest(e.request)),
 )
-
 const PREFIX_APP_CACHE_KEY = 'DANK-website-'
 const APP_CACHE_KEY: string = PREFIX_APP_CACHE_KEY + website.cacheKey
 

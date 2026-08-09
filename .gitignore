@@ -1,6 +1,6 @@
 node_modules
 tsconfig.tsbuildinfo
 
-client/*.js
+client/build
 lib_js
 lib_types

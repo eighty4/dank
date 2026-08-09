@@ -41,7 +41,8 @@
     "dependencies": {
         "esbuild": "^0.28.1",
         "mime": "^4.1.0",
-        "parse5": "^8.0.1"
+        "parse5": "^8.0.1",
+        "ulid": "^3.0.2"
     },
     "devDependencies": {
         "@types/node": "catalog:",
@@ -49,7 +50,9 @@
         "typescript": "catalog:"
     },
     "files": [
-        "client/client.js",
+        "client/build/client.js",
+        "client/build/bootstrap.dw.js",
+        "client/build/bootstrap.sw.js",
         "client/ServiceWorker.ts",
         "lib/*.ts",
         "lib_js/*.js",

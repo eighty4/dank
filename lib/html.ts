@@ -1,6 +1,6 @@
 import EventEmitter from 'node:events'
 import { readFile } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative } from 'node:path'
 import { join } from 'node:path/posix'
 import { extname } from 'node:path/posix'
 import {
@@ -12,6 +12,7 @@ import {
     serialize,
 } from 'parse5'
 import type { ResolvedDankConfig } from './config.ts'
+import { PageClientJS } from './dev_client.ts'
 import { LOG } from './developer.ts'
 import type { Resolver } from './dirs.ts'
 import { DankError } from './errors.ts'
@@ -82,7 +83,7 @@ export type HtmlEntrypointEvents = {
 
 export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
     #c: ResolvedDankConfig
-    #clientJS: ClientJS | null
+    #clientJS: PageClientJS | null
     #document: Document = defaultTreeAdapter.createDocument()
     #entrypoints: Set<string> = new Set()
     // path within pages dir omitting pages/ segment
@@ -101,7 +102,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
     ) {
         super({ captureRejections: true })
         this.#c = c
-        this.#clientJS = ClientJS.initialize(c)
+        this.#clientJS = PageClientJS.initialize(c)
         this.#resolver = resolver
         this.#url = url
         this.#fsPath = fsPath
@@ -223,7 +224,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         this.#partials = partials
         this.#scripts = imports.scripts
         this.#injectPartials()
-        if (devScript) this.#addScriptInline(devScript)
+        if (devScript) this.#prependClientJS(devScript)
         const entrypoints = mergeEntrypoints(
             imports,
             ...partials.map(p => p.imports),
@@ -364,7 +365,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         }
     }
 
-    #addScriptInline(js: string) {
+    #prependClientJS(js: string) {
         const scriptNode = parseFragment(`<script type="module">${js}</script>`)
             .childNodes[0]
         const htmlNode = this.#document.childNodes.find(
@@ -373,7 +374,13 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         const headNode = htmlNode.childNodes.find(
             node => node.nodeName === 'head',
         ) as ParentNode | undefined
-        defaultTreeAdapter.appendChild(headNode || htmlNode, scriptNode)
+        const parent = headNode || htmlNode
+        const firstChild = defaultTreeAdapter.getFirstChild(parent)
+        if (firstChild) {
+            defaultTreeAdapter.insertBefore(parent, scriptNode, firstChild)
+        } else {
+            defaultTreeAdapter.appendChild(parent, scriptNode)
+        }
     }
 
     // rewrites hrefs to content hashed urls
@@ -417,7 +424,7 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
                 forEach(childNode)
             }
             if (childNode.nodeName === '#comment' && 'data' in childNode) {
-                const partialMatch = childNode.data.match(/\{\{(?<pp>.+)\}\}/)
+                const partialMatch = childNode.data.match(/\{\{(?<pp>.+)}}/)
                 if (partialMatch) {
                     const specifier = partialMatch.groups!.pp.trim()
                     collection.partials.push({
@@ -545,42 +552,5 @@ function rewriteHrefs(scripts: Array<ImportedScript>, hrefs?: HtmlHrefs) {
             elem.attrs.find(attr => attr.name === 'href')!.value =
                 rewriteTo || `/${entrypoint.out}`
         }
-    }
-}
-
-class ClientJS {
-    static #instance: ClientJS | null = null
-
-    static initialize(c: ResolvedDankConfig): ClientJS | null {
-        if (!c.isServeMode()) {
-            return null
-        } else if (!ClientJS.#instance) {
-            ClientJS.#instance = new ClientJS(c.esbuildPort)
-        }
-        return ClientJS.#instance
-    }
-
-    #esbuildPort: number
-    #read: Promise<string>
-    #result: Promise<string>
-
-    private constructor(esbuildPort: number) {
-        this.#esbuildPort = esbuildPort
-        this.#read = readFile(
-            resolve(import.meta.dirname, join('..', 'client', 'client.js')),
-            'utf-8',
-        )
-        this.#result = this.#read.then(this.#transform)
-    }
-
-    async retrieve(esbuildPort: number): Promise<string> {
-        if (esbuildPort !== this.#esbuildPort) {
-            this.#result = this.#read.then(this.#transform)
-        }
-        return await this.#result
-    }
-
-    #transform = (js: string): string => {
-        return js.replace('3995', '' + this.#esbuildPort)
     }
 }

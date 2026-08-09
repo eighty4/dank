@@ -1,36 +1,22 @@
-import { readFile, writeFile } from 'node:fs/promises'
-import { extname, join, sep } from 'node:path'
+import { writeFile } from 'node:fs/promises'
 import {
     type BuildContext,
-    type BuildFailure,
     type BuildOptions,
-    type BuildResult,
-    type Location,
-    type Message,
     type Metafile,
-    type PartialMessage,
-    type Plugin,
-    type PluginBuild,
     build,
     context,
 } from 'esbuild'
 import type { DefineDankGlobal } from './define.ts'
 import type { DankDirectories } from './dirs.ts'
+import { isEsbuildBuildFailure, printEsbuildWarnings } from './errors.ts'
 import {
-    isEsbuildBuildFailure,
-    printEsbuildBuildFailureMessages,
-    printEsbuildRecovered,
-    printEsbuildWarnings,
-} from './errors.ts'
-import type {
-    WebsiteRegistry,
-    WorkerBuildRegistry,
-    WorkerManifest,
-} from './registry.ts'
+    createErrorPlugin,
+    enhanceEsbuildBuildFailure,
+} from './esbuild_error_plugin.ts'
+import { createWorkersPlugin } from './esbuild_worker_plugin.ts'
+import type { WebsiteRegistry, WorkerBuildRegistry } from './registry.ts'
 
 const EXT_CSS_JS_TS = /\.(tsx?|jsx?|css|mts|mjs)$/
-
-const EXT_JS_TS = /\.(tsx?|jsx?|mjs|mts)$/
 
 export type EsbuildEntrypoint = { in: string; out: string }
 
@@ -155,10 +141,12 @@ function esbuildPlugins(
 ): NonNullable<BuildOptions['plugins']> {
     const p = devCtx
         ? [
-              workersPlugin(wr, (build, wr) => r.mergeDevContext(build, wr)),
-              errorsPlugin(r),
+              createWorkersPlugin(wr, {
+                  mergeDevCtx: (build, wr) => r.mergeDevContext(build, wr),
+              }),
+              createErrorPlugin(r),
           ]
-        : [workersPlugin(wr)]
+        : [createWorkersPlugin(wr)]
     if (r.config.esbuild?.plugins?.length) {
         p.push(...r.config.esbuild.plugins)
     }
@@ -175,330 +163,4 @@ function mapEntryPointPaths(entryPoints: Array<EsbuildEntrypoint>) {
             out: entryPoint.out.replace(EXT_CSS_JS_TS, ''),
         }
     })
-}
-
-const WORKER_CTOR_REGEX =
-    /new(?:\s|\r?\n)+(?<ctor>(?:Shared)?Worker)(?:\s|\r?\n)*\((?:\s|\r?\n)*(?<url>.*?)(?:\s|\r?\n)*(?<end>[\),])/g
-const WORKER_URL_STRING_REGEX = /^('.*'|".*")$/
-const WORKER_URL_REGEX = /^.*\.(ts|js|mts|mjs)$/
-
-function inNodeModulesPattern(dirs: DankDirectories): RegExp {
-    return new RegExp(
-        '^' +
-            RegExp.escape(
-                `${dirs.projectRootAbs}${sep}${'node_modules'}${sep}`,
-            ),
-    )
-}
-
-export function workersPlugin(
-    wr: WorkerBuildRegistry,
-    mergeDevCtx?: (build: Metafile, wr: WorkerBuildRegistry) => void,
-): Plugin {
-    const IN_NODE_MODULES = inNodeModulesPattern(wr.dirs)
-    return {
-        name: '@eighty4/dank/esbuild/workers',
-        setup(build: PluginBuild) {
-            if (!build.initialOptions.metafile)
-                throw TypeError('plugin requires metafile')
-
-            build.onLoad({ filter: EXT_JS_TS }, async args => {
-                if (IN_NODE_MODULES.test(args.path)) {
-                    return null
-                }
-                let contents = await readFile(args.path, 'utf8')
-                let offset = 0
-                let errors: Array<PartialMessage> | undefined = undefined
-                let clientScript: string | undefined = undefined
-                for (const workerCtorMatch of contents.matchAll(
-                    WORKER_CTOR_REGEX,
-                )) {
-                    if (
-                        !WORKER_URL_STRING_REGEX.test(
-                            workerCtorMatch.groups!.url,
-                        )
-                    ) {
-                        if (!errors) errors = []
-                        errors.push(
-                            invalidWorkerUrlCtorArg(
-                                buildMessageLocation(
-                                    args.path,
-                                    contents,
-                                    workerCtorMatch.index,
-                                    workerCtorMatch[0].length,
-                                ),
-                                workerCtorMatch,
-                            ),
-                        )
-                        continue
-                    }
-                    const originalCtorSrc =
-                        workerCtorMatch.groups!.url.substring(
-                            1,
-                            workerCtorMatch.groups!.url.length - 1,
-                        )
-                    if (!WORKER_URL_REGEX.test(originalCtorSrc)) {
-                        if (!errors) errors = []
-                        errors.push(
-                            invalidWorkerUrlExtension(
-                                buildMessageLocation(
-                                    args.path,
-                                    contents,
-                                    workerCtorMatch.index,
-                                    workerCtorMatch[0].length,
-                                ),
-                                workerCtorMatch,
-                            ),
-                        )
-                        continue
-                    }
-                    if (isIndexCommented(contents, workerCtorMatch.index)) {
-                        continue
-                    }
-                    if (!clientScript) {
-                        clientScript = wr.resolver.projectPathFromAbsolute(
-                            args.path,
-                        )
-                    }
-                    const workerProjectPath =
-                        wr.resolver.resolvePagesRelativeHrefInProjectDir(
-                            clientScript,
-                            originalCtorSrc,
-                        )
-                    if (workerProjectPath === 'outofbounds') {
-                        if (!errors) errors = []
-                        errors.push(
-                            outofboundsWorkerUrlCtorArg(
-                                buildMessageLocation(
-                                    args.path,
-                                    contents,
-                                    workerCtorMatch.index,
-                                    workerCtorMatch[0].length,
-                                ),
-                                workerCtorMatch,
-                            ),
-                        )
-                        continue
-                    }
-                    const ctor = workerCtorMatch.groups!.ctor as
-                        'Worker' | 'SharedWorker'
-                    const entrypoint: EsbuildEntrypoint = {
-                        in: workerProjectPath,
-                        out:
-                            '.lib/' +
-                            workerProjectPath
-                                .replace(EXT_JS_TS, '.js')
-                                .replaceAll('\\', '/'),
-                    }
-                    const placeholderCtorSrc: `/${string}` = `/${entrypoint.out}`
-                    const workerCtorReplacement = `new ${ctor}('${placeholderCtorSrc}'${workerCtorMatch.groups!.end}`
-                    contents =
-                        contents.substring(0, workerCtorMatch.index + offset) +
-                        workerCtorReplacement +
-                        contents.substring(
-                            workerCtorMatch.index +
-                                workerCtorMatch[0].length +
-                                offset,
-                        )
-                    offset +=
-                        workerCtorReplacement.length - workerCtorMatch[0].length
-                    wr.addWorker({
-                        clientScript,
-                        ctor,
-                        entrypoint,
-                        originalCtorSrc,
-                        placeholderCtorSrc,
-                    })
-                }
-                const loader = loaderFromExt(extname(args.path))
-                return { contents, errors, loader }
-            })
-
-            // only use build.onEnd when building with `esbuild.context` because
-            // error reporting and stack traces are moot with esbuild's js/go native bridge and EventEmitter
-            // events triggered from merging build state get processed within that bermuda triangle
-            if (mergeDevCtx) {
-                build.onEnd((result: BuildResult<{ metafile: true }>) => {
-                    if (!result.errors.length && result.metafile) {
-                        mergeDevCtx(result.metafile, wr)
-                    }
-                })
-            }
-        },
-    }
-}
-
-function loaderFromExt(ext: string): 'ts' | 'tsx' | 'jsx' | 'js' {
-    switch (ext) {
-        case '.ts':
-        case '.mts':
-            return 'ts'
-        case '.tsx':
-            return 'tsx'
-        case '.js':
-        case '.mjs':
-            return 'js'
-        case '.jsx':
-            return 'jsx'
-        default:
-            throw TypeError()
-    }
-}
-
-function isIndexCommented(contents: string, index: number) {
-    const preamble = contents.substring(0, index)
-    const lineIndex = preamble.lastIndexOf('\n') || 0
-    const lineCommented = /\/\//.test(preamble.substring(lineIndex))
-    if (lineCommented) {
-        return true
-    }
-    const blockCommentIndex = preamble.lastIndexOf('/*')
-    const blockCommented =
-        blockCommentIndex !== -1 &&
-        preamble.substring(blockCommentIndex).indexOf('*/') === -1
-    return blockCommented
-}
-
-function buildMessageLocation(
-    file: string,
-    contents: string,
-    matchIndex: number,
-    matchLength: number,
-    suggestion: string = '',
-): Location {
-    const preamble = contents.substring(0, matchIndex)
-    let lineStart = preamble.lastIndexOf('\n')
-    lineStart = lineStart === -1 ? 0 : lineStart + 1
-    const lineEnd = contents.indexOf('\n', lineStart)
-    return {
-        namespace: 'file',
-        suggestion,
-        file,
-        lineText: contents.substring(
-            lineStart,
-            lineEnd === -1 ? contents.length : lineEnd,
-        ),
-        line: preamble.match(/\n/g)?.length || 1,
-        column: preamble.length - lineStart,
-        length: matchLength,
-    }
-}
-
-function outofboundsWorkerUrlCtorArg(
-    location: Location,
-    workerCtorMatch: RegExpExecArray,
-): PartialMessage {
-    return {
-        id: 'worker-url-outofbounds',
-        text: `The ${workerCtorMatch.groups!.ctor} constructor URL arg \`${workerCtorMatch.groups!.url}\` cannot resolve to a path outside of the project directory`,
-        location,
-    }
-}
-
-function invalidWorkerUrlCtorArg(
-    location: Location,
-    workerCtorMatch: RegExpExecArray,
-): PartialMessage {
-    return {
-        id: 'worker-url-unresolvable',
-        text: `The ${workerCtorMatch.groups!.ctor} constructor URL arg \`${workerCtorMatch.groups!.url}\` must be a relative module path`,
-        location,
-    }
-}
-
-function invalidWorkerUrlExtension(
-    location: Location,
-    workerCtorMatch: RegExpExecArray,
-): PartialMessage {
-    const url = workerCtorMatch.groups!.url.slice(1, -1)
-    return {
-        id: 'worker-url-unsupported-ext',
-        text: `The ${workerCtorMatch.groups!.ctor} URL \`${url}\` needs a \`ts\` or \`js\` extension`,
-        location: {
-            ...location,
-            column: location.column + workerCtorMatch[0].lastIndexOf('.'),
-            length: url.length - url.lastIndexOf('.'),
-        },
-    }
-}
-
-// added to `esbuild.context({plugins})` to enhance errors logged by `esbuild.Context.serve()`
-function errorsPlugin(r: WebsiteRegistry): Plugin {
-    return {
-        name: '@eighty4/dank/esbuild/errors',
-        setup(build: PluginBuild) {
-            if (!build.initialOptions.metafile)
-                throw TypeError('plugin requires metafile')
-
-            let prevHadErrors = false
-
-            build.onEnd(async (result: BuildResult<{ metafile: true }>) => {
-                if (result.errors.length) {
-                    await enhanceEsbuildBuildFailure(r, result)
-                    printEsbuildBuildFailureMessages(result)
-                    prevHadErrors = true
-                } else if (prevHadErrors) {
-                    printEsbuildRecovered()
-                    prevHadErrors = false
-                }
-            })
-        },
-    }
-}
-
-async function enhanceEsbuildBuildFailure(
-    r: WebsiteRegistry,
-    e: Pick<BuildFailure, 'errors'>,
-) {
-    const unresolvedEntrypointPattern = new RegExp(
-        /^Could not resolve "(?<p>.+?)"$/,
-    )
-    for (const m of e.errors) {
-        const unresolvedEntrypointMatch = unresolvedEntrypointPattern.exec(
-            m.text,
-        )
-        if (unresolvedEntrypointMatch) {
-            const p = unresolvedEntrypointMatch.groups!.p.replace(
-                /^\.[\/\\]/,
-                '',
-            )
-            const w = r.workers!.find(w => w.entrypoint.in === p)
-            if (w) {
-                await enhanceUnresolvedWorkerEntrypointMessage(r, m, p, w)
-            }
-        }
-    }
-}
-
-async function enhanceUnresolvedWorkerEntrypointMessage(
-    r: WebsiteRegistry,
-    m: Message,
-    unresolvePath: string,
-    w: WorkerManifest,
-) {
-    const workerClient = w.clients[0]
-    m.text = `Could not find ${workerClient.ctor} entrypoint "${unresolvePath}"`
-    const source = await readFile(
-        join(r.config.dirs.projectRootAbs, workerClient.script),
-        'utf8',
-    )
-    const workerUrl = RegExp.escape(workerClient.originalCtorSrc)
-    const sourcePattern = new RegExp(
-        `new(?:\\s|\\r?\\n)+${workerClient.ctor}(?:\\s|\\r?\\n)*\\((?:\\s|\\r?\\n)*(?<url>('${workerUrl}'|"${workerUrl}"))(?:\\s|\\r?\\n)*[\\),]`,
-    )
-    const sourceMatch = sourcePattern.exec(source)
-    if (sourceMatch) {
-        const location = buildMessageLocation(
-            workerClient.script,
-            source,
-            sourceMatch.index + sourceMatch[0].indexOf(sourceMatch.groups!.url),
-            sourceMatch.groups!.url.length,
-        )
-        m.notes = [
-            {
-                text: `The ${workerClient.ctor} entrypoint was found in "${workerClient.script}":`,
-                location,
-            },
-        ]
-    }
 }

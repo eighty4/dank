@@ -4,20 +4,30 @@ import esbuild from 'esbuild'
 
 const projectDir = resolve(join(import.meta.dirname, '..'))
 const clientDir = join(projectDir, 'client')
+const buildDir = join(clientDir, 'build')
+
+const minify = false
 
 await esbuild.build({
-    logLevel: 'info',
-    allowOverwrite: true,
     absWorkingDir: clientDir,
-    entryPoints: ['client.ts'],
-    outdir: clientDir,
-    treeShaking: true,
-    target: 'ES2022',
     bundle: true,
-    minify: true,
+    entryPoints: [
+        'client.ts',
+        ...['dw', 'sw'].map(w => ({
+            in: `dev/bootstrap.${w}.ts`,
+            out: 'bootstrap.' + w,
+        })),
+    ],
     format: 'esm',
-    platform: 'browser',
     loader: {
         '.css': 'text',
+        '.svg': 'text',
     },
+    logLevel: 'info',
+    minify,
+    outdir: buildDir,
+    platform: 'browser',
+    splitting: false,
+    target: 'ES2022',
+    treeShaking: true,
 })
