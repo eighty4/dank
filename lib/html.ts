@@ -365,21 +365,28 @@ export class HtmlEntrypoint extends EventEmitter<HtmlEntrypointEvents> {
         }
     }
 
-    #prependClientJS(js: string) {
-        const scriptNode = parseFragment(`<script type="module">${js}</script>`)
-            .childNodes[0]
+    #prependClientJS(scripts: Array<string>) {
         const htmlNode = this.#document.childNodes.find(
             node => node.nodeName === 'html',
         ) as ParentNode
         const headNode = htmlNode.childNodes.find(
             node => node.nodeName === 'head',
         ) as ParentNode | undefined
-        const parent = headNode || htmlNode
-        const firstChild = defaultTreeAdapter.getFirstChild(parent)
-        if (firstChild) {
-            defaultTreeAdapter.insertBefore(parent, scriptNode, firstChild)
-        } else {
-            defaultTreeAdapter.appendChild(parent, scriptNode)
+        const headOrHtmlNode = headNode || htmlNode
+        const firstChild = defaultTreeAdapter.getFirstChild(headOrHtmlNode)
+        for (const script of scripts) {
+            const scriptNode = parseFragment(
+                `<script type="module">${script}</script>`,
+            ).childNodes[0]
+            if (firstChild) {
+                defaultTreeAdapter.insertBefore(
+                    headOrHtmlNode,
+                    scriptNode,
+                    firstChild,
+                )
+            } else {
+                defaultTreeAdapter.appendChild(headOrHtmlNode, scriptNode)
+            }
         }
     }
 

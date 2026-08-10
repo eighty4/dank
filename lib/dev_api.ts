@@ -1,5 +1,9 @@
 export const DANK_DEV_API_PATH = '/@dank/dev/api'
 
+export function isDankDevApiUrl(url: URL): boolean {
+    return url.pathname === DANK_DEV_API_PATH
+}
+
 export type MenuPane = 'channels' | 'opfs' | 'workers' | 'pages'
 
 export type DankDevPage = {

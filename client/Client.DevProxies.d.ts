@@ -1,4 +1,7 @@
-import { DANK_DEV_Worker, DANK_DEV_SharedWorker } from './workers.ts'
+import {
+    DANK_DEV_Worker,
+    DANK_DEV_SharedWorker,
+} from './dev/proxies/workers.ts'
 
 declare global {
     var DANK_DEV_Worker: DANK_DEV_Worker

@@ -1,0 +1,12 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "lib": ["ES2022", "DOM"],
+        "rootDir": ".",
+        "types": [],
+        "noEmit": true
+    },
+    "files": ["client/Client.CSSImports.d.ts"],
+    "include": ["client/esbuild.ts"],
+    "exclude": []
+}

@@ -20,7 +20,7 @@ function printHelp(mode?: DankMode): never {
     }
     if (SHOW_SERVE) {
         console.log(
-            'dank serve [--log-http] [--minify] [--production] [--service-worker]',
+            'dank serve [--log-http] [--minify] [--no-dank-ui] [--production] [--service-worker]',
         )
     }
     if (SHOW_PREVIEW) {
@@ -32,6 +32,7 @@ function printHelp(mode?: DankMode): never {
     }
     if (SHOW_SERVE) {
         console.log('  --minify          minify sources')
+        console.log('  --no-dank-ui      do not bundle DANK dev UI')
         console.log('  --production      build for production release')
     }
     console.log('  --service-worker  build service worker')

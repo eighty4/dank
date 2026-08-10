@@ -8,20 +8,21 @@ const buildDir = join(clientDir, 'build')
 
 const minify = false
 
+const entryPoints = [
+    'esbuild.ts',
+    ...['page', 'dw', 'sw'].map(w => ({
+        in: `dev/bootstrap.${w}.ts`,
+        out: 'bootstrap.' + w,
+    })),
+]
+
 await esbuild.build({
     absWorkingDir: clientDir,
     bundle: true,
-    entryPoints: [
-        'client.ts',
-        ...['dw', 'sw'].map(w => ({
-            in: `dev/bootstrap.${w}.ts`,
-            out: 'bootstrap.' + w,
-        })),
-    ],
+    entryPoints,
     format: 'esm',
     loader: {
         '.css': 'text',
-        '.svg': 'text',
     },
     logLevel: 'info',
     minify,

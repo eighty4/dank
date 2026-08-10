@@ -2,7 +2,14 @@
 
 ## [Unreleased]
 
-- ???
+### Added
+
+- `dank serve` bundles a DANK dev UI that provides access to
+  embedded views of `dank.config.ts` dev pages, an OPFS browser,
+  and time-series logging of Worker, SharedWorker & BroadcastChannel
+  activity
+- DANK dev UI is activated in the browser by mashing the `d` key
+  and can be omitted from pages with `dank serve --no-dank-ui`
 
 ## [v0.0.5] - 2026-08-04
 

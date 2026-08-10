@@ -3,6 +3,7 @@ export type DankFlags = {
     esbuildPort?: number
     logHttp: boolean
     minify: boolean
+    noDankUI: boolean
     production: boolean
 }
 
@@ -10,13 +11,15 @@ export function resolveFlags(
     mode: 'build' | 'preview' | 'serve',
 ): Readonly<DankFlags> {
     const withHttp = mode !== 'build'
-    const isDev = mode === 'serve'
+    const isDevBuildMode = mode === 'serve'
+    const isOptInProduction = isProductionBuild()
     return Object.freeze({
         dankPort: withHttp ? resolveDankPort() : undefined,
         esbuildPort: withHttp ? resolveEsbuildPort() : undefined,
         logHttp: withHttp && willLogHttp(),
-        minify: !isDev || willMinify(),
-        production: !isDev || isProductionBuild(),
+        minify: !isDevBuildMode || isOptInProduction || willMinify(),
+        noDankUI: resolveNoDankUI(),
+        production: !isDevBuildMode || isOptInProduction,
     })
 }
 
@@ -39,6 +42,13 @@ function resolveEsbuildPort(): number | undefined {
     }
 }
 
+function resolveNoDankUI(): boolean {
+    if (process.env.DANK_UI === '0' || process.env.DANK_UI === 'false') {
+        return true
+    }
+    return process.argv.includes('--no-dank-ui')
+}
+
 function parsePortEnvVar(name: string): number {
     const port = parseInt(process.env[name]!, 10)
     if (isNaN(port)) {
@@ -49,9 +59,7 @@ function parsePortEnvVar(name: string): number {
 }
 
 const willMinify = () =>
-    isProductionBuild() ||
-    process.env.MINIFY === 'true' ||
-    process.argv.includes('--minify')
+    process.env.MINIFY === 'true' || process.argv.includes('--minify')
 
 // `dank serve` will print http access logs to console
 const willLogHttp = () =>

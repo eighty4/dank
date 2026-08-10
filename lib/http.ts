@@ -12,8 +12,8 @@ import { Readable } from 'node:stream'
 import mime from 'mime'
 import type { ResolvedDankConfig } from './config.ts'
 import type { WebsiteManifest } from './dank.ts'
-import { DANK_DEV_API_PATH } from './dev_api.ts'
-import { dankDevApi } from './dev_client.ts'
+import { isDankDevApiUrl } from './dev_api.ts'
+import { DankDevApi } from './dev_backend.ts'
 import type { DankDirectories } from './dirs.ts'
 import type { UrlRewrite, WebsiteRegistry } from './registry.ts'
 import type { DevServices } from './services.ts'
@@ -38,6 +38,7 @@ export function startWebServer(
     htmlFileFetcher: HtmlFileFetcher,
     devServices: DevServices,
 ) {
+    const dankDevApi = c.useDankDevUI() ? new DankDevApi(c) : false
     const serverAddress = 'http://localhost:' + c.dankPort
     const handler = (req: IncomingMessage, res: ServerResponse) => {
         if (!req.url || !req.method) {
@@ -45,8 +46,8 @@ export function startWebServer(
         } else {
             const url = new URL(serverAddress + req.url)
             const headers = convertHeadersToFetch(req.headers)
-            if (url.pathname === DANK_DEV_API_PATH) {
-                invokeDankDevApiMethod(req, res, c)
+            if (dankDevApi && isDankDevApiUrl(url)) {
+                invokeDankDevApiMethod(req, res, dankDevApi)
             } else {
                 frontendFetcher(url, headers, res, () =>
                     onNotFound(
@@ -74,7 +75,7 @@ export function startWebServer(
 function invokeDankDevApiMethod(
     req: IncomingMessage,
     res: ServerResponse,
-    c: ResolvedDankConfig,
+    api: DankDevApi,
 ) {
     if (req.method !== 'POST') {
         res.writeHead(405)
@@ -89,7 +90,7 @@ function invokeDankDevApiMethod(
                     res.writeHead(400)
                     res.end()
                 } else {
-                    return dankDevApi(c, JSON.parse(apiReq)).then(apiRes => {
+                    return api.invokeReq(JSON.parse(apiReq)).then(apiRes => {
                         res.writeHead(200, {
                             'content-type': 'application/json;charset=utf-8',
                         })

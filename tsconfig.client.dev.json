@@ -7,16 +7,10 @@
         "noEmit": true
     },
     "files": [
-        "client/Client.Imports.d.ts",
-        "client/Client.Globals.d.ts",
+        "client/Client.DevProxies.d.ts",
+        "client/Client.CSSImports.d.ts",
         "client/Client.UserAgentData.d.ts"
     ],
-    "include": [
-        "client/*.ts",
-        "client/dev/*.ts",
-        "client/dev/**/*.css",
-        "client/dev/**/*.svg",
-        "lib/dev_api.ts"
-    ],
+    "include": ["client/dev/**/*.ts", "client/dev/**/*.css", "lib/dev_api.ts"],
     "exclude": ["client/ServiceWorker.*"]
 }

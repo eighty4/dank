@@ -51,6 +51,8 @@ export type ResolvedDankConfig = {
 
     pageMappings(): Record<`/${string}`, PageMapping>
 
+    useDankDevUI(): boolean
+
     reload(): Promise<void>
 }
 
@@ -175,6 +177,10 @@ class DankConfigInternal implements ResolvedDankConfig {
         } else {
             return this.#pages
         }
+    }
+
+    useDankDevUI(): boolean {
+        return this.isServeMode() && !this.#flags.noDankUI
     }
 
     async reload() {
