@@ -6,7 +6,7 @@ const projectDir = resolve(join(import.meta.dirname, '..'))
 const clientDir = join(projectDir, 'client')
 const buildDir = join(clientDir, 'build')
 
-const minify = false
+const minify = process.argv.includes('no-minify') === false
 
 const entryPoints = [
     'esbuild.ts',
