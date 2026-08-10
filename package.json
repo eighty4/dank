@@ -53,10 +53,7 @@
         "typescript": "catalog:"
     },
     "files": [
-        "client/build/client.js",
-        "client/build/bootstrap.page.js",
-        "client/build/bootstrap.dw.js",
-        "client/build/bootstrap.sw.js",
+        "client/build/*.js",
         "client/ServiceWorker.ts",
         "lib/*.ts",
         "lib_js/*.js",
