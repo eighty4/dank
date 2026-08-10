@@ -30,13 +30,16 @@
     "scripts": {
         "build": "pnpm build:client && pnpm build:lib",
         "build:client": "node scripts/build_client.ts",
-        "build:lib": "tsc -p tsconfig.lib.json && tsc -p tsconfig.exports.json && tsc -p tsconfig.sw.json",
-        "build:release": "pnpm build && node scripts/prepare_release.ts",
+        "build:lib": "pnpm typecheck:sw && tsc -p tsconfig.lib.json && tsc -p tsconfig.exports.json",
+        "build:release": "node scripts/release_prebuild.ts && pnpm build && node scripts/release_postbuild.ts",
         "fmt": "prettier --write . --log-level warn",
         "fmtcheck": "prettier --check .",
         "test": "node --test \"test/**/*.test.ts\"",
         "test:rebuild": "pnpm build && pnpm test",
-        "typecheck": "tsc --noEmit && tsc -p tsconfig.client.dev.json --noEmit && tsc -p tsconfig.client.esbuild.json --noEmit"
+        "typecheck": "tsc && pnpm typecheck:client && pnpm typecheck:lib && pnpm typecheck:sw",
+        "typecheck:client": "tsc -p tsconfig.client.dev.json && tsc -p tsconfig.client.esbuild.json",
+        "typecheck:lib": "tsc -p tsconfig.lib.json --noEmit",
+        "typecheck:sw": "tsc -p tsconfig.sw.json"
     },
     "dependencies": {
         "esbuild": "^0.28.1",
