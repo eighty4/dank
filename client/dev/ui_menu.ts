@@ -60,10 +60,25 @@ export class DankDevMenu extends HTMLElement {
     }
 
     notify(pane: MenuPane) {
-        if (this.#selected && this.#selected.dataset['pane'] === pane) {
+        if (this.#selected?.dataset['pane'] === pane) {
             return
         }
-        this.#buttons[pane]!.classList.add('notification')
+        const notifying = this.#buttons[pane]!
+        if (notifying.classList.contains('notification')) {
+            return
+        }
+        let delay: number = 0
+        for (const button of Object.values(this.#buttons)) {
+            if (
+                button !== notifying &&
+                button.classList.contains('notification')
+            ) {
+                delay = animationDelayOf(button) - animationTimeOf(button)
+                break
+            }
+        }
+        notifying.style.animationDelay = `${delay}ms`
+        notifying.classList.add('notification')
     }
 
     select(pane: MenuPane) {
@@ -84,9 +99,32 @@ export class DankDevMenu extends HTMLElement {
         }
         this.#selected = this.#buttons[pane]!
         this.#selected.classList.remove('notification')
+        this.#selected.style.animationDelay = `0ms`
         this.#selected.classList.add('selected')
         this.#selected.ariaSelected = 'true'
         this.dispatchEvent(new PaneSelectionEvent(pane))
+    }
+}
+
+function animationDelayOf(elem: HTMLElement): number {
+    const { animationDelay } = elem.style
+    if (
+        !animationDelay ||
+        animationDelay === '0ms' ||
+        !animationDelay.endsWith('ms')
+    ) {
+        return 0
+    }
+    const parsed = parseInt(animationDelay.slice(0, -2), 10)
+    return isNaN(parsed) ? 0 : parsed
+}
+
+function animationTimeOf(elem: HTMLElement): number {
+    const animation = elem.getAnimations().at(0)
+    if (animation?.currentTime && typeof animation.currentTime === 'number') {
+        return animation.currentTime
+    } else {
+        return 0
     }
 }
 
