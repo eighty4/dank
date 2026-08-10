@@ -1,0 +1,32 @@
+:host {
+    position: fixed;
+    top: 0;
+    left: 0;
+}
+
+dank-esbuild-indicator {
+    --offset: 1px;
+    --size: calc(100% - 2px);
+
+    border: 6px dashed var(--color);
+    z-index: var(--z-index);
+    position: fixed;
+    display: block;
+    top: var(--offset);
+    left: var(--offset);
+    height: var(--size);
+    width: var(--size);
+    box-sizing: border-box;
+    pointer-events: none;
+    opacity: 0;
+
+    &.css {
+        --color: #5e5;
+        --z-index: 183995;
+    }
+
+    &.js {
+        --color: #fd5;
+        --z-index: 123995;
+    }
+}
