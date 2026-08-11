@@ -12,19 +12,19 @@ import { serveWebsite } from './serve.ts'
 
 function printHelp(mode?: DankMode): never {
     const showMode = (m: DankMode) => !mode || mode === m
+    const listFlags = (flags: Array<string>) =>
+        flags.map(s => `[${s}]`).join(' ')
     const SHOW_BUILD = showMode('build')
     const SHOW_SERVE = showMode('serve')
     const SHOW_PREVIEW = showMode('preview')
     if (SHOW_BUILD) {
-        console.log('dank build [--service-worker]')
+        console.log('dank build', listFlags(buildFlags()))
     }
     if (SHOW_SERVE) {
-        console.log(
-            'dank serve [--log-http] [--minify] [--no-dank-ui] [--production] [--service-worker]',
-        )
+        console.log('dank serve', listFlags(serveFlags()), '[HTML]')
     }
     if (SHOW_PREVIEW) {
-        console.log('dank preview [--log-http] [--service-worker]')
+        console.log('dank preview', listFlags(previewFlags()))
     }
     console.log('\nOPTIONS:')
     if (SHOW_PREVIEW || SHOW_SERVE) {
@@ -86,6 +86,8 @@ const mode: DankMode = (function resolveMode() {
     return mode
 })()
 
+validateFlags(mode, args)
+
 try {
     switch (mode) {
         case 'build':
@@ -101,9 +103,9 @@ try {
     process.exit(1)
 }
 
-function printCommandError(msg: string): never {
+function printCommandError(msg: string, mode?: DankMode): never {
     console.error(red('error:'), msg)
-    printHelp()
+    printHelp(mode)
 }
 
 function printError(e: unknown) {
@@ -112,4 +114,42 @@ function printError(e: unknown) {
     } else {
         console.error(red('error:'), e instanceof DankError ? e.message : e)
     }
+}
+
+function validateFlags(mode: DankMode, args: Array<string>): void | never {
+    const valid = modeFlags(mode)
+    for (const arg of args) {
+        if (arg.startsWith('--') && !valid.includes(arg)) {
+            printCommandError(`unknown arg \`${arg}\``, mode)
+        }
+    }
+}
+
+function modeFlags(mode: DankMode): Array<string> {
+    switch (mode) {
+        case 'build':
+            return buildFlags()
+        case 'preview':
+            return previewFlags()
+        case 'serve':
+            return serveFlags()
+    }
+}
+
+function buildFlags(): Array<string> {
+    return ['--service-worker']
+}
+
+function previewFlags(): Array<string> {
+    return ['--log-http', '--service-worker']
+}
+
+function serveFlags(): Array<string> {
+    return [
+        '--log-http',
+        '--minify',
+        '--no-dank-ui',
+        '--production',
+        '--service-worker',
+    ]
 }
