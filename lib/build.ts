@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { loadConfig, type ResolvedDankConfig } from './config.ts'
+import { type ResolvedDankConfig } from './config.ts'
 import type { ServiceWorkerBuild, WebsiteManifest } from './dank.ts'
 import { type DefineDankGlobal, createGlobalDefinitions } from './define.ts'
 import type { DankDirectories } from './dirs.ts'
@@ -9,11 +9,8 @@ import { copyAssets } from './public.ts'
 import { WebsiteRegistry } from './registry.ts'
 
 export async function buildWebsite(
-    c?: ResolvedDankConfig,
+    c: ResolvedDankConfig,
 ): Promise<WebsiteManifest> {
-    if (!c) {
-        c = await loadConfig('build', process.cwd())
-    }
     console.log(
         'minified build',
         await c.buildTag(),

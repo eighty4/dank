@@ -1,64 +1,28 @@
-import { rm } from 'node:fs/promises'
 import { extname } from 'node:path'
 import type { BuildContext } from 'esbuild'
-import { bold, green, red } from './ansi.ts'
-import { buildWebsite } from './build.ts'
-import { loadConfig, type ResolvedDankConfig } from './config.ts'
+import { red } from './ansi.ts'
+import { type ResolvedDankConfig } from './config.ts'
 import { createGlobalDefinitions } from './define.ts'
 import { LOG } from './debug_log.ts'
 import { esbuildDevContext } from './esbuild.ts'
 import {
-    createBuiltDistFilesFetcher,
-    createBuiltDistHtmlFileFetcher,
     createDevServeFilesFetcher,
     startWebServer,
     type HtmlFileFetcher,
-    type UrlRewriteProvider,
 } from './http.ts'
-import { WebsiteRegistry, type UrlRewrite } from './registry.ts'
+import { WebsiteRegistry } from './registry.ts'
 import { DevServices } from './services.ts'
+import { configureDevServicesOutput } from './services_output.ts'
 import { watch } from './watch.ts'
 
 let c: ResolvedDankConfig
 
-export async function serveWebsite(mode: 'preview' | 'serve'): Promise<never> {
-    c = await loadConfig(mode, process.cwd())
-    await rm(c.dirs.buildRoot, { force: true, recursive: true })
-    if (c.isPreviewMode()) {
-        await startPreviewMode()
-    } else {
-        await startDevMode()
-    }
+export async function serveWebsite(
+    initialC: ResolvedDankConfig,
+): Promise<never> {
+    c = initialC
+    await startDevMode()
     return new Promise(() => {})
-}
-
-async function startPreviewMode() {
-    const manifest = await buildWebsite(c)
-    const frontend = createBuiltDistFilesFetcher(c.dirs, manifest)
-    const devServices = launchDevServices()
-    const urlRewrites: Array<UrlRewrite> = Object.keys(c.pages)
-        .sort()
-        .map(url => {
-            const mapping = c.pages[url as `/${string}`]
-            return typeof mapping !== 'object' || !mapping.pattern
-                ? null
-                : { url: url as `/${string}`, pattern: mapping.pattern }
-        })
-        .filter(mapping => mapping !== null)
-    startWebServer(
-        c,
-        { urlRewrites } satisfies UrlRewriteProvider,
-        frontend,
-        createBuiltDistHtmlFileFetcher(c.dirs, manifest),
-        devServices,
-    )
-    const controller = new AbortController()
-    watch('dank.config.ts', controller.signal, async filename => {
-        console.log(filename, 'was updated!')
-        console.log('config updates are not hot reloaded during `dank preview`')
-        console.log('restart DANK to reload configuration')
-        controller.abort()
-    })
 }
 
 type BuildContextState =
@@ -66,44 +30,12 @@ type BuildContextState =
 
 async function startDevMode() {
     const registry = new WebsiteRegistry(c)
+    const devServices = new DevServices()
     const htmlFiles: Record<`/${string}`, string> = {}
     let buildContext: BuildContextState = null
 
-    watch('dank.config.ts', async filename => {
-        LOG({
-            realm: 'serve',
-            message: 'config watch event',
-            data: {
-                file: filename,
-            },
-        })
-        try {
-            await c.reload()
-        } catch (ignore) {
-            return
-        }
-        registry.configSync()
-        devServices.update(c.services)
-    })
-
-    watch(c.dirs.pages, { recursive: true }, filename => {
-        LOG({
-            realm: 'serve',
-            message: 'pages dir watch event',
-            data: {
-                file: filename,
-            },
-        })
-        if (extname(filename) === '.html') {
-            registry.htmlEntrypoints.forEach(html => {
-                if (html.fsPath === filename) {
-                    html.emit('change')
-                } else if (html.usesPartial(filename)) {
-                    html.emit('change', filename)
-                }
-            })
-        }
-    })
+    watchDankConfig(registry, devServices)
+    watchPagesDir(registry)
 
     function resetBuildContext() {
         switch (buildContext) {
@@ -184,8 +116,53 @@ async function startDevMode() {
         registry,
         htmlFetcher,
     )
-    const devServices = launchDevServices()
+    configureDevServicesOutput(devServices)
+    devServices.start(c.services)
     startWebServer(c, registry, frontend, htmlFetcher, devServices)
+}
+
+function watchDankConfig(registry: WebsiteRegistry, devServices: DevServices) {
+    watch('dank.config.ts', async filename => {
+        LOG({
+            realm: 'serve',
+            message: 'config watch event',
+            data: {
+                file: filename,
+            },
+        })
+        try {
+            await c.reload()
+        } catch (ignore) {
+            return
+        }
+        registry.configSync()
+        devServices.update(c.services)
+    })
+}
+
+function watchPagesDir(registry: WebsiteRegistry) {
+    watch(c.dirs.pages, { recursive: true }, filename =>
+        onHtmlChange(registry, filename),
+    )
+}
+
+function onHtmlChange(registry: WebsiteRegistry, filename: string) {
+    LOG({
+        realm: 'serve',
+        message: 'pages dir watch event',
+        data: {
+            file: filename,
+        },
+    })
+    if (extname(filename) === '.html') {
+        registry.htmlEntrypoints.forEach(html => {
+            if (html.fsPath === filename) {
+                html.emit('change')
+            } else if (html.usesPartial(filename)) {
+                html.emit('change', filename)
+            }
+        })
+    }
 }
 
 async function startEsbuildWatch(
@@ -218,48 +195,4 @@ async function startEsbuildWatch(
     })
 
     return ctx
-}
-
-function launchDevServices(): DevServices {
-    const services = new DevServices(c.services)
-    services.on('error', (label, cause) =>
-        console.log(formatServiceLabel(label), 'errored:', cause),
-    )
-    services.on('exit', (label, code) => {
-        if (code) {
-            console.log(formatServiceLabel(label), 'exited', code)
-        } else {
-            console.log(formatServiceLabel(label), 'exited')
-        }
-    })
-    services.on('launch', label =>
-        console.log(formatServiceLabel(label), 'starting'),
-    )
-    services.on('stdout', (label, output) =>
-        printServiceOutput(label, green, output),
-    )
-    services.on('stderr', (label, output) =>
-        printServiceOutput(label, red, output),
-    )
-    return services
-}
-
-function formatServiceLabel(label: string): string {
-    return `${bold('|')} ${label} ${bold('|')}`
-}
-
-function formatServiceOutputLabel(
-    label: string,
-    color: (s: string) => string,
-): string {
-    return color(formatServiceLabel(label))
-}
-
-function printServiceOutput(
-    label: string,
-    color: (s: string) => string,
-    output: Array<string>,
-) {
-    const formattedLabel = formatServiceOutputLabel(label, color)
-    for (const line of output) console.log(formattedLabel, line)
 }

@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 
 import { green, red } from './ansi.ts'
-import { buildWebsite } from './build.ts'
+import { loadConfig } from './config.ts'
 import type { DankMode } from './dank.ts'
 import {
     DankError,
     isEsbuildBuildFailure,
     printEsbuildBuildFailureMessages,
 } from './errors.ts'
-import { serveWebsite } from './serve.ts'
 
 function printHelp(mode?: DankMode): never {
     const showMode = (m: DankMode) => !mode || mode === m
@@ -87,17 +86,31 @@ const mode: DankMode = (function resolveMode() {
 })()
 
 validateFlags(mode, args)
+const c = loadConfig(mode, process.cwd())
 
-try {
+const runMode: () => Promise<void> = (function resolveModeRunner() {
     switch (mode) {
         case 'build':
-            await buildWebsite()
-            console.log(green('done'))
-            process.exit(0)
+            return async () => {
+                const { buildWebsite } = await import('./build.ts')
+                await buildWebsite(await c)
+                console.log(green('done'))
+            }
         case 'serve':
+            return async () => {
+                const { serveWebsite } = await import('./serve.ts')
+                await serveWebsite(await c)
+            }
         case 'preview':
-            await serveWebsite(mode)
+            return async () => {
+                const { servePreview } = await import('./serve_preview.ts')
+                await servePreview(await c)
+            }
     }
+})()
+
+try {
+    await runMode()
 } catch (e: unknown) {
     printError(e)
     process.exit(1)

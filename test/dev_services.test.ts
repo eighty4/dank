@@ -18,7 +18,8 @@ suite('Dev services', () => {
                     },
                 },
             ]
-            const services = new DevServices(configured)
+            const services = new DevServices()
+            services.start(configured)
             const runningHttp = services.httpServices
             assert.equal(runningHttp.length, 1)
             assert.equal(runningHttp[0].port, 8675)
@@ -26,7 +27,8 @@ suite('Dev services', () => {
         })
 
         test('updates adds a new service', () => {
-            const services = new DevServices([])
+            const services = new DevServices()
+            services.start(undefined)
             assert.equal(services.httpServices.length, 0)
             const configured: Array<DevService> = [
                 {

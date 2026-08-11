@@ -22,7 +22,6 @@ class ManagedService extends EventEmitter<DevServiceEvents> {
     #label: string
     #process: ChildProcess | null
     #spec: DevService
-    // #status: ManagedServiceStatus = 'starting'
 
     constructor(label: string, spec: DevService) {
         super()
@@ -124,40 +123,45 @@ const spawnProcess: SpawnProcess =
               })
 
 export class DevServices extends EventEmitter<DevServiceEvents> {
-    #running: Array<ManagedService>
+    #active: boolean = false
+    #services: Array<ManagedService> | null = null
 
-    constructor(services: ResolvedDankConfig['services']) {
-        super()
-        this.#running = services ? this.#start(services) : []
+    get httpServices(): Array<HttpService> {
+        return this.#services?.map(s => s.httpSpec).filter(http => !!http) ?? []
+    }
+
+    start(services: ResolvedDankConfig['services']) {
+        if (this.#active) {
+            throw Error()
+        }
+        this.#active = true
+        this.#services = services ? this.#start(services) : []
         if (process.platform === 'win32') {
             process.once('SIGINT', () => process.exit())
         }
         process.once('exit', this.shutdown)
     }
 
-    get httpServices(): Array<HttpService> {
-        return this.#running.map(s => s.httpSpec).filter(http => !!http)
+    update(services: ResolvedDankConfig['services']) {
+        if (!this.#active) {
+            return
+        } else if (!services?.length) {
+            this.shutdown()
+        } else if (
+            !matchingConfigs(this.#services?.map(s => s.spec) ?? null, services)
+        ) {
+            this.shutdown()
+            this.#services = this.#start(services)
+        }
     }
 
     shutdown = () => {
-        this.#running.forEach(s => {
-            s.kill()
-            s.removeAllListeners()
-        })
-        this.#running.length = 0
-    }
-
-    update(services: ResolvedDankConfig['services']) {
-        if (!services?.length) {
-            this.shutdown()
-        } else if (
-            !matchingConfigs(
-                this.#running.map(s => s.spec),
-                services,
-            )
-        ) {
-            this.shutdown()
-            this.#running = this.#start(services)
+        if (this.#services) {
+            this.#services.forEach(s => {
+                s.kill()
+                s.removeAllListeners()
+            })
+            this.#services.length = 0
         }
     }
 
@@ -186,10 +190,10 @@ export class DevServices extends EventEmitter<DevServiceEvents> {
 }
 
 function matchingConfigs(
-    a: Array<DevService>,
+    a: Array<DevService> | null,
     b: NonNullable<ResolvedDankConfig['services']>,
 ): boolean {
-    if (a.length !== b.length) {
+    if (a?.length !== b.length) {
         return false
     }
     const crossRef = [...a]
