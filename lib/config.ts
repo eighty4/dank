@@ -72,9 +72,35 @@ export async function loadConfig(
             modulePath,
         },
     })
-    const c = new DankConfigInternal(mode, modulePath, dirs)
+    const c = new DankConfigInternal(
+        mode,
+        new DankConfigModuleLoader(modulePath),
+        dirs,
+    )
     await c.reload()
     return c
+}
+
+type DankConfigLoader = {
+    loadValidated(details: DankDetails): Promise<DankConfig>
+}
+
+class DankConfigModuleLoader implements DankConfigLoader {
+    #modulePath: string
+
+    constructor(modulePath: string) {
+        this.#modulePath = modulePath
+    }
+
+    async loadValidated(details: DankDetails): Promise<DankConfig> {
+        const module = await import(`file:${this.#modulePath}?${Date.now()}`)
+        const c: Partial<DankConfig> =
+            typeof module.default === 'function'
+                ? await module.default(details)
+                : module.default
+        validateDankConfig(c)
+        return c as DankConfig
+    }
 }
 
 class DankConfigInternal implements ResolvedDankConfig {
@@ -83,7 +109,7 @@ class DankConfigInternal implements ResolvedDankConfig {
     #dirs: Readonly<DankDirectories>
     #flags: Readonly<DankFlags>
     #mode: DankMode
-    #modulePath: string
+    #loader: DankConfigLoader
     #serviceWorkerBuilder?: ServiceWorkerBuilder
     #afterBuild: DankConfig['afterBuild']
 
@@ -94,11 +120,15 @@ class DankConfigInternal implements ResolvedDankConfig {
     #devPages: Readonly<ResolvedDankConfig['devPages']> = {}
     #services: Readonly<DankConfig['services']>
 
-    constructor(mode: DankMode, modulePath: string, dirs: DankDirectories) {
+    constructor(
+        mode: DankMode,
+        loader: DankConfigLoader,
+        dirs: DankDirectories,
+    ) {
         this.#dirs = dirs
         this.#flags = lookupDankFlags(mode)
         this.#mode = mode
-        this.#modulePath = modulePath
+        this.#loader = loader
     }
 
     get dankPort(): number {
@@ -184,8 +214,7 @@ class DankConfigInternal implements ResolvedDankConfig {
     }
 
     async reload() {
-        const userConfig = await resolveConfig(
-            this.#modulePath,
+        const userConfig = await this.#loader.loadValidated(
             resolveDankDetails(this.#mode, this.#flags),
         )
         this.#buildTag = null
@@ -216,19 +245,6 @@ function resolveDankPort(
 
 function resolveEsbuildPort(flags: DankFlags, userConfig: DankConfig): number {
     return flags.esbuildPort || userConfig.esbuild?.port || DEFAULT_ESBUILD_PORT
-}
-
-async function resolveConfig(
-    modulePath: string,
-    details: DankDetails,
-): Promise<DankConfig> {
-    const module = await import(`file:${modulePath}?${Date.now()}`)
-    const c: Partial<DankConfig> =
-        typeof module.default === 'function'
-            ? await module.default(details)
-            : module.default
-    validateDankConfig(c)
-    return c as DankConfig
 }
 
 function resolveDankDetails(mode: DankMode, flags: DankFlags): DankDetails {
