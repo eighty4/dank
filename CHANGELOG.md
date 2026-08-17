@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- ???
+
+## [v0.0.6] - 2026-08-17
+
 ### Added
 
 - `dank serve` bundles a DANK dev UI that provides access to
@@ -102,7 +106,8 @@
 - `dank.config.ts` configures api/web service commands that are started with `dank serve`
   using the `DankConfig['services']` field of `defineConfig`
 
-[Unreleased]: https://github.com/eighty4/dank/compare/v0.0.5...HEAD
+[Unreleased]: https://github.com/eighty4/dank/compare/v0.0.6...HEAD
+[v0.0.6]: https://github.com/eighty4/dank/compare/v0.0.5...v0.0.6
 [v0.0.5]: https://github.com/eighty4/dank/compare/v0.0.4...v0.0.5
 [v0.0.4]: https://github.com/eighty4/dank/compare/v0.0.3...v0.0.4
 [v0.0.3]: https://github.com/eighty4/dank/compare/v0.0.2...v0.0.3
