@@ -3,6 +3,7 @@
     "compilerOptions": {
         "declaration": true,
         "declarationDir": "lib_types",
+        "noEmit": false,
         "emitDeclarationOnly": true
     },
     "include": ["lib/dank.ts"]

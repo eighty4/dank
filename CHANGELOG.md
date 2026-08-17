@@ -11,6 +11,11 @@
 - DANK dev UI is activated in the browser by mashing the `d` key
   and can be omitted from pages with `dank serve --no-dank-ui`
 
+### Fixed
+
+- Type declarations have returned after being dropped from the
+  previous release
+
 ## [v0.0.5] - 2026-08-04
 
 ### Added
