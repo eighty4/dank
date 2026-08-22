@@ -1,19 +1,15 @@
-import { extname } from 'node:path'
+import { extname, join } from 'node:path'
 import type { BuildContext } from 'esbuild'
 import { red } from './ansi.ts'
 import { type ResolvedDankConfig } from './config.ts'
 import { createGlobalDefinitions } from './define.ts'
 import { LOG } from './debug_log.ts'
 import { esbuildDevContext } from './esbuild.ts'
-import {
-    createDevServeFilesFetcher,
-    startWebServer,
-    type HtmlFileFetcher,
-} from './http.ts'
+import { startWebServer } from './http.ts'
 import { WebsiteRegistry } from './registry.ts'
 import { DevServices } from './services.ts'
 import { configureDevServicesOutput } from './services_output.ts'
-import { watch } from './watch.ts'
+import { watch, type WatchEventKind } from './watch.ts'
 
 let c: ResolvedDankConfig
 
@@ -34,8 +30,50 @@ async function startDevMode() {
     const htmlFiles: Record<`/${string}`, string> = {}
     let buildContext: BuildContextState = null
 
-    watchDankConfig(registry, devServices)
-    watchPagesDir(registry)
+    watch(join(c.dirs.projectRootAbs, 'dank.config.ts'), filename =>
+        onConfigUpdate(filename),
+    )
+
+    watch(c.dirs.pagesAbs, { recursive: true }, (filename, event) => {
+        if (extname(filename) === '.html') {
+            onHtmlChange(filename, event)
+        }
+    })
+
+    async function onConfigUpdate(filename: string) {
+        LOG({
+            realm: 'serve',
+            message: 'config watch event',
+            data: {
+                file: filename,
+            },
+        })
+        try {
+            await c.reload()
+        } catch (ignore) {
+            return
+        }
+        registry.configSync()
+        devServices.update(c.services)
+    }
+
+    function onHtmlChange(filename: string, event: WatchEventKind) {
+        LOG({
+            realm: 'serve',
+            message: 'pages dir watch event',
+            data: {
+                file: filename,
+                event,
+            },
+        })
+        if (event === 'remove') {
+            for (const pageUrl of registry.pageUrlsForHtmlFsPath(filename)) {
+                delete htmlFiles[pageUrl]
+            }
+        } else {
+            registry.htmlModified(filename)
+        }
+    }
 
     function resetBuildContext() {
         switch (buildContext) {
@@ -88,6 +126,10 @@ async function startDevMode() {
         })
     })
 
+    registry.on('webpage-removed', url => {
+        delete htmlFiles[url]
+    })
+
     registry.on('workers', () => {
         LOG({
             realm: 'serve',
@@ -108,61 +150,12 @@ async function startDevMode() {
     // inital start of esbuild ctx
     resetBuildContext()
 
-    const htmlFetcher: HtmlFileFetcher = url =>
-        Promise.resolve(htmlFiles[url] ?? null)
-    const frontend = createDevServeFilesFetcher(
-        c.esbuildPort,
-        c.dirs,
-        registry,
-        htmlFetcher,
-    )
     configureDevServicesOutput(devServices)
     devServices.start(c.services)
-    startWebServer(c, registry, frontend, htmlFetcher, devServices)
-}
-
-function watchDankConfig(registry: WebsiteRegistry, devServices: DevServices) {
-    watch('dank.config.ts', async filename => {
-        LOG({
-            realm: 'serve',
-            message: 'config watch event',
-            data: {
-                file: filename,
-            },
-        })
-        try {
-            await c.reload()
-        } catch (ignore) {
-            return
-        }
-        registry.configSync()
-        devServices.update(c.services)
+    startWebServer(c, {
+        devServices,
+        htmlFiles: url => htmlFiles[url] ?? null,
     })
-}
-
-function watchPagesDir(registry: WebsiteRegistry) {
-    watch(c.dirs.pages, { recursive: true }, filename =>
-        onHtmlChange(registry, filename),
-    )
-}
-
-function onHtmlChange(registry: WebsiteRegistry, filename: string) {
-    LOG({
-        realm: 'serve',
-        message: 'pages dir watch event',
-        data: {
-            file: filename,
-        },
-    })
-    if (extname(filename) === '.html') {
-        registry.htmlEntrypoints.forEach(html => {
-            if (html.fsPath === filename) {
-                html.emit('change')
-            } else if (html.usesPartial(filename)) {
-                html.emit('change', filename)
-            }
-        })
-    }
 }
 
 async function startEsbuildWatch(

@@ -25,6 +25,11 @@ const DEFAULT_CONFIG_PATH = './dank.config.ts'
 
 export type { DevService } from './dank.ts'
 
+export type UrlRewrite = {
+    pattern: RegExp
+    url: `/${string}`
+}
+
 export type ResolvedDankConfig = {
     // static config that does not hot reload during `dank serve`
     get dirs(): Readonly<DankDirectories>
@@ -35,12 +40,14 @@ export type ResolvedDankConfig = {
     get dankPort(): number
     get esbuildPort(): number
     get esbuild(): Readonly<Omit<EsbuildConfig, 'port'>> | undefined
+    get pageUrls(): Array<`/${string}`>
     get pages(): Readonly<Record<`/${string}`, PageMapping>>
     get devPages(): Readonly<
         Record<`/${string}`, Omit<DevPageMapping & PageMapping, 'pattern'>>
     >
     get services(): Readonly<DankConfig['services']>
     get serviceWorkerBuilder(): DankConfig['serviceWorker']
+    get urlRewrites(): Array<UrlRewrite> | null
     get afterBuild(): DankConfig['afterBuild']
 
     buildTag(): Promise<string>
@@ -119,6 +126,7 @@ class DankConfigInternal implements ResolvedDankConfig {
     #pages: Readonly<Record<`/${string}`, PageMapping>> = {}
     #devPages: Readonly<ResolvedDankConfig['devPages']> = {}
     #services: Readonly<DankConfig['services']>
+    #urlRewrites: Array<UrlRewrite> | null = null
 
     constructor(
         mode: DankMode,
@@ -155,6 +163,10 @@ class DankConfigInternal implements ResolvedDankConfig {
         return this.#mode
     }
 
+    get pageUrls(): Array<`/${string}`> {
+        return Object.keys(this.#pages) as Array<`/${string}`>
+    }
+
     get pages(): Readonly<Record<`/${string}`, PageMapping>> {
         return this.#pages
     }
@@ -169,6 +181,10 @@ class DankConfigInternal implements ResolvedDankConfig {
 
     get serviceWorkerBuilder(): DankConfig['serviceWorker'] {
         return this.#serviceWorkerBuilder
+    }
+
+    get urlRewrites(): Array<UrlRewrite> | null {
+        return this.#urlRewrites
     }
 
     get afterBuild(): DankConfig['afterBuild'] {
@@ -227,6 +243,14 @@ class DankConfigInternal implements ResolvedDankConfig {
         this.#services = Object.freeze(userConfig.services)
         this.#serviceWorkerBuilder = userConfig.serviceWorker
         this.#afterBuild = userConfig.afterBuild
+
+        const urlRewrites: Array<UrlRewrite> = Object.entries(this.#pages)
+            .filter(([_, mapping]) => !!mapping.pattern)
+            .map(
+                ([url, mapping]) =>
+                    ({ url, pattern: mapping.pattern }) as UrlRewrite,
+            )
+        this.#urlRewrites = urlRewrites.length ? urlRewrites : null
     }
 }
 

@@ -1,9 +1,33 @@
 import {
+    access,
     watch as createWatch,
     type WatchOptionsWithStringEncoding,
 } from 'node:fs/promises'
+import { isAbsolute, join } from 'node:path'
 
-type WatchCallback = (filename: string) => void
+export type WatchEventKind = 'add' | 'modify' | 'remove'
+
+export type WatchCallback = (filename: string, event: WatchEventKind) => void
+
+const FIRE_DELAY = 90
+const FIRE_TIMEOUT = 100
+
+class FireEventDelay {
+    #renamed: boolean
+    threshold: number = Date.now() + FIRE_DELAY
+
+    constructor(renamed: boolean) {
+        this.#renamed = renamed
+    }
+
+    set renamed(renamed: boolean) {
+        this.#renamed = renamed
+    }
+
+    get renamed(): boolean {
+        return this.#renamed
+    }
+}
 
 export async function watch(p: string, fire: WatchCallback): Promise<void>
 
@@ -25,6 +49,7 @@ export async function watch(
         AbortSignal | WatchCallback | WatchOptionsWithStringEncoding,
     fireOrUndefined?: WatchCallback,
 ): Promise<void> {
+    if (!isAbsolute(p)) throw TypeError()
     let opts: WatchOptionsWithStringEncoding | undefined
     let fire: WatchCallback
     if (signalFireOrOpts instanceof AbortSignal) {
@@ -37,26 +62,39 @@ export async function watch(
     if (opts && typeof fireOrUndefined === 'function') {
         fire = fireOrUndefined
     }
-    const delayFire = 90
-    const timeout = 100
-    let changes: Record<string, number> = {}
+    let changes: Record<string, FireEventDelay> = {}
+
+    async function drainEventsReadyToFire() {
+        const now = Date.now()
+        for (const [filename, eventDelay] of Object.entries(changes)) {
+            if (eventDelay.threshold <= now) {
+                delete changes[filename]
+                if (eventDelay.renamed) {
+                    try {
+                        await access(join(p, filename))
+                        fire(filename, 'add')
+                    } catch (e) {
+                        fire(filename, 'remove')
+                    }
+                } else {
+                    fire(filename, 'modify')
+                }
+            }
+        }
+    }
+
     try {
-        for await (const { filename } of createWatch(p, opts)) {
-            if (filename) {
-                if (!changes[filename]) {
-                    const now = Date.now()
-                    changes[filename] = now + delayFire
-                    setTimeout(() => {
-                        const now = Date.now()
-                        for (const [filename, then] of Object.entries(
-                            changes,
-                        )) {
-                            if (then <= now) {
-                                fire(filename)
-                                delete changes[filename]
-                            }
-                        }
-                    }, timeout)
+        for await (const e of createWatch(p, opts)) {
+            if (e.filename) {
+                if (changes[e.filename]) {
+                    if (e.eventType === 'rename') {
+                        changes[e.filename].renamed = true
+                    }
+                } else {
+                    changes[e.filename] = new FireEventDelay(
+                        e.eventType === 'rename',
+                    )
+                    setTimeout(drainEventsReadyToFire, FIRE_TIMEOUT)
                 }
             }
         }

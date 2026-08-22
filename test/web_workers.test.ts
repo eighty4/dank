@@ -249,10 +249,12 @@ new ${ctor}('./data-orchestration.ts')`,
             await dankServing.start()
             await dankServing.assertFetchStatus(
                 '/.lib/pages/computational-wizardry.js',
+                null,
                 200,
             )
             await dankServing.assertFetchText(
                 '/dank.js',
+                null,
                 `new Worker("/.lib/pages/computational-wizardry.js")`,
             )
         })
@@ -278,10 +280,12 @@ new ${ctor}('./data-orchestration.ts')`,
             await dankServing.start()
             await dankServing.assertFetchStatus(
                 '/.lib/workers/feature/computational-wizardry.js',
+                null,
                 200,
             )
             await dankServing.assertFetchText(
                 '/feature/dank.js',
+                null,
                 `new Worker("/.lib/workers/feature/computational-wizardry.js")`,
             )
         })

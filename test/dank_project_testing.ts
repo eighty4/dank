@@ -18,6 +18,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { stripVTControlCharacters } from 'node:util'
+import mime from 'mime'
 import { loadConfig, type ResolvedDankConfig } from '../lib/config.ts'
 import type { WebsiteManifest } from '../lib/dank.ts'
 import {
@@ -508,13 +509,24 @@ export class DankServing extends EventEmitter<DankServingEvents> {
 
     async assertFetch(
         path: `/${string}`,
+        acceptMime: string | null,
         cb: (r: Response) => Promise<void> | void,
     ) {
-        await cb(await fetch(`http://localhost:${this.#dankPort}${path}`))
+        await cb(
+            await fetch(`http://localhost:${this.#dankPort}${path}`, {
+                headers: {
+                    accept: acceptMime ?? mime.getType(path) ?? undefined,
+                },
+            }),
+        )
     }
 
-    async assertFetchStatus(path: `/${string}`, status: number) {
-        await this.assertFetch(path, r =>
+    async assertFetchStatus(
+        path: `/${string}`,
+        acceptMime: string | null,
+        status: number,
+    ) {
+        await this.assertFetch(path, acceptMime, r =>
             assert.equal(
                 r.status,
                 status,
@@ -525,9 +537,10 @@ export class DankServing extends EventEmitter<DankServingEvents> {
 
     async assertFetchText(
         path: `/${string}`,
+        acceptMime: string | null,
         pattern: RegExp | string | ((text: string) => Promise<void> | void),
     ) {
-        await this.assertFetch(path, async r => {
+        await this.assertFetch(path, acceptMime, async r => {
             assert.equal(r.status, 200)
             await assertContent(path, await r.text(), pattern)
         })
