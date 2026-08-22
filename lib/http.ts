@@ -1,5 +1,5 @@
-import { createReadStream } from 'node:fs'
-import { readFile, stat } from 'node:fs/promises'
+import { createReadStream, ReadStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import {
     createServer,
     type IncomingHttpHeaders,
@@ -8,141 +8,320 @@ import {
     type ServerResponse,
 } from 'node:http'
 import { join } from 'node:path'
-import { Readable } from 'node:stream'
 import mime from 'mime'
 import type { ResolvedDankConfig } from './config.ts'
-import type { WebsiteManifest } from './dank.ts'
 import { isDankDevApiUrl } from './dev_api.ts'
 import { DankDevApi } from './dev_backend.ts'
 import type { DankDirectories } from './dirs.ts'
-import type { UrlRewrite, WebsiteRegistry } from './registry.ts'
 import type { DevServices } from './services.ts'
 
-export type UrlRewriteProvider = {
-    urlRewrites: Array<UrlRewrite>
+type ReqHandler = (
+    url: URL,
+    req: IncomingMessage,
+) => Promise<Response | ReadStream | null | undefined>
+
+class ReqHandlerSequence {
+    #handlers: Array<ReqHandler>
+    constructor(handlers: Array<ReqHandler>) {
+        this.#handlers = handlers
+    }
+
+    async handle(
+        url: URL,
+        req: IncomingMessage,
+        res: ServerResponse,
+    ): Promise<void> {
+        let handler = 0
+        const next = async () => {
+            if (handler >= this.#handlers.length) return
+            let result: Awaited<ReturnType<ReqHandler>>
+            try {
+                result = await this.#handlers[handler++](url, req)
+            } catch (e) {
+                console.error('error during http request handler:', e)
+                res.writeHead(500)
+                return
+            }
+            if (!result) {
+                await next()
+            } else if (result instanceof ReadStream) {
+                await streamFile(result, res)
+            } else if (result instanceof Response) {
+                res.writeHead(
+                    result.status,
+                    convertHeadersFromFetch(result.headers),
+                )
+                res.write(await result.bytes())
+            } else {
+                throw TypeError()
+            }
+        }
+        try {
+            await next()
+        } finally {
+            if (!res.headersSent) {
+                res.writeHead(404)
+            }
+            res.end()
+        }
+    }
 }
 
-export type FrontendFetcher = (
-    url: URL,
-    headers: Headers,
-    res: ServerResponse,
-    notFound: () => void,
-) => void
+export type DevServerState = {
+    htmlFiles?: InMemoryHtmlFiles
+    devServices?: DevServices
+}
 
-export type HtmlFileFetcher = (url: `/${string}`) => Promise<string | null>
+export type InMemoryHtmlFiles = (url: `/${string}`) => string | null
 
 export function startWebServer(
     c: ResolvedDankConfig,
-    urlRewriteProvider: UrlRewriteProvider,
-    frontendFetcher: FrontendFetcher,
-    htmlFileFetcher: HtmlFileFetcher,
-    devServices: DevServices,
+    devState?: DevServerState,
 ) {
-    const dankDevApi = c.useDankDevUI() ? new DankDevApi(c) : false
     const serverAddress = 'http://localhost:' + c.dankPort
-    const handler = (req: IncomingMessage, res: ServerResponse) => {
-        if (!req.url || !req.method) {
-            res.end()
-        } else {
-            const url = new URL(serverAddress + req.url)
-            const headers = convertHeadersToFetch(req.headers)
-            if (dankDevApi && isDankDevApiUrl(url)) {
-                invokeDankDevApiMethod(req, res, dankDevApi)
-            } else {
-                frontendFetcher(url, headers, res, () =>
-                    onNotFound(
-                        req,
-                        url,
-                        headers,
-                        devServices,
-                        urlRewriteProvider,
-                        htmlFileFetcher,
-                        res,
-                    ),
-                )
-            }
+    const handlers: Array<ReqHandler> = []
+    const handlerSequence = new ReqHandlerSequence(handlers)
+
+    if (c.useDankDevUI()) {
+        handlers.push(createDankDevApiHandler(c))
+    }
+
+    if (devState?.htmlFiles) {
+        handlers.push(createInMemoryHtmlFilesHandler(devState.htmlFiles))
+    }
+
+    if (c.isPreviewMode()) {
+        handlers.push(createPreviewDistStaticHandler(c.dirs))
+    } else {
+        handlers.push(createDevPublicDirHandler(c.dirs))
+        handlers.push(createDevEsbuildProxyHandler(c))
+    }
+
+    if (c.isPreviewMode()) {
+        handlers.push(createUrlRewriteHandler(c, createDistHtmlFileReader(c)))
+    } else if (devState?.htmlFiles) {
+        handlers.push(
+            createUrlRewriteHandler(
+                c,
+                createInMemoryHtmlDelegate(devState.htmlFiles),
+            ),
+        )
+    } else {
+        throw TypeError()
+    }
+
+    if (devState?.devServices) {
+        handlers.push(createDevHttpServicesHandler(devState.devServices))
+    }
+
+    const listener = (req: IncomingMessage, res: ServerResponse) => {
+        if (req.url && req.method) {
+            handlerSequence.handle(new URL(serverAddress + req.url), req, res)
         }
     }
-    createServer(c.flags.logHttp ? createLogWrapper(handler) : handler).listen(
-        c.dankPort,
-    )
+    createServer(
+        c.flags.logHttp ? createLogListener(listener) : listener,
+    ).listen(c.dankPort)
     console.log(
         c.isPreviewMode() ? 'preview' : 'dev',
         `server is live at http://127.0.0.1:${c.dankPort}`,
     )
 }
 
-function invokeDankDevApiMethod(
-    req: IncomingMessage,
-    res: ServerResponse,
-    api: DankDevApi,
+function createLogListener(
+    listener: (req: IncomingMessage, res: ServerResponse) => void,
 ) {
-    if (req.method !== 'POST') {
-        res.writeHead(405)
-        res.end()
-    } else if (!req.headers['content-type']?.startsWith('application/json')) {
-        res.writeHead(400)
-        res.end()
-    } else {
-        collectReqBody(req)
-            .then(apiReq => {
-                if (apiReq === null) {
-                    res.writeHead(400)
-                    res.end()
-                } else {
-                    return api.invokeReq(JSON.parse(apiReq)).then(apiRes => {
-                        res.writeHead(200, {
-                            'content-type': 'application/json;charset=utf-8',
-                        })
-                        res.write(JSON.stringify(apiRes))
-                        res.end()
-                    })
-                }
-            })
-            .catch(() => {
-                res.writeHead(500)
-                res.end()
-            })
-    }
-}
-
-async function onNotFound(
-    req: IncomingMessage,
-    url: URL,
-    headers: Headers,
-    devServices: DevServices,
-    urlRewriteProvider: UrlRewriteProvider,
-    htmlFileFetcher: HtmlFileFetcher,
-    res: ServerResponse,
-) {
-    if (req.method === 'GET') {
-        const urlRewrite = urlRewriteProvider.urlRewrites.find(urlRewrite =>
-            urlRewrite.pattern.test(url.pathname),
-        )
-        if (urlRewrite) {
-            sendHtml(res, await htmlFileFetcher(urlRewrite.url))
-            return
+    return (req: IncomingMessage, res: ServerResponse) => {
+        if (req.url && req.method) {
+            console.log('  > ', req.method, req.url)
+            listener(req, res)
+            console.log('', res.statusCode, req.method, req.url)
         }
     }
-    const fetchResponse = await tryHttpServices(req, url, headers, devServices)
-    if (fetchResponse) {
-        sendFetchResponse(res, fetchResponse)
-    } else {
-        res.writeHead(404)
-        res.end()
+}
+
+function isGetRequest(req: IncomingMessage): boolean {
+    return req.method === 'GET'
+}
+
+function isHtmlRequest(req: IncomingMessage): boolean {
+    return req.headers.accept?.includes('text/html') ?? false
+}
+
+function createDevPublicDirHandler(dirs: DankDirectories): ReqHandler {
+    return async (url, req) => {
+        if (isGetRequest(req)) {
+            const maybePublicPath = join(
+                dirs.projectRootAbs,
+                dirs.public,
+                url.pathname,
+            )
+            const isFromPublic = await exists(maybePublicPath)
+            if (isFromPublic) {
+                return createReadStream(maybePublicPath)
+            }
+        }
     }
 }
 
-async function sendFetchResponse(res: ServerResponse, fetchResponse: Response) {
-    res.writeHead(
-        fetchResponse.status,
-        undefined,
-        convertHeadersFromFetch(fetchResponse.headers),
-    )
-    if (fetchResponse.body) {
-        Readable.fromWeb(fetchResponse.body).pipe(res)
+function createDevEsbuildProxyHandler(c: ResolvedDankConfig): ReqHandler {
+    return async (url, req) => {
+        if (isGetRequest(req) && !isHtmlRequest(req)) {
+            const proxyAddress = 'http://localhost:' + c.esbuildPort
+            try {
+                const fetchRes = await retryFetchWithTimeout(
+                    proxyAddress + url.pathname,
+                )
+                if (fetchRes.status === 404) {
+                    return
+                } else {
+                    return fetchRes
+                }
+            } catch (e: any) {
+                if (isFetchRetryTimeout(e)) {
+                    return new Response(null, { status: 504 })
+                } else {
+                    console.error('error proxying to esbuild:', e.message)
+                    return new Response(null, { status: 502 })
+                }
+            }
+        }
+    }
+}
+
+function createPreviewDistStaticHandler(dirs: DankDirectories): ReqHandler {
+    const buildDistAbs = join(dirs.projectRootAbs, dirs.buildDist)
+    return async (url, req) => {
+        if (isGetRequest(req)) {
+            if (isHtmlRequest(req)) {
+                const maybeHtmlPath = join(
+                    buildDistAbs,
+                    url.pathname,
+                    'index.html',
+                )
+                if (await exists(maybeHtmlPath)) {
+                    return createReadStream(
+                        join(buildDistAbs, url.pathname, 'index.html'),
+                    )
+                }
+            } else {
+                const maybePath = join(buildDistAbs, url.pathname)
+                if (await exists(maybePath)) {
+                    return createReadStream(maybePath)
+                }
+            }
+        }
+    }
+}
+
+function createInMemoryHtmlFilesHandler(
+    htmlFiles: InMemoryHtmlFiles,
+): ReqHandler {
+    return async (url, req) => {
+        if (isGetRequest(req) && isHtmlRequest(req)) {
+            const html = htmlFiles(url.pathname as `/${string}`)
+            if (html) {
+                return new Response(html, {
+                    headers: { 'content-type': 'text/html' },
+                })
+            }
+        }
+    }
+}
+
+type HtmlFilesDelegate = (path: `/${string}`) => ReadStream | Response | null
+
+function createInMemoryHtmlDelegate(
+    htmlFiles: InMemoryHtmlFiles,
+): HtmlFilesDelegate {
+    return (url: `/${string}`) => {
+        console.log(url, 'not html?')
+        const html = htmlFiles(url)
+        if (html) {
+            console.log('HTML')
+            return new Response(html, {
+                headers: { 'Content-Type': 'text/html' },
+            })
+        } else {
+            return null
+        }
+    }
+}
+
+function createDistHtmlFileReader(c: ResolvedDankConfig): HtmlFilesDelegate {
+    return (path: `/${string}`) => {
+        if (c.pageUrls.includes(path)) {
+            return createReadStream(
+                join(
+                    c.dirs.projectRootAbs,
+                    c.dirs.buildDist,
+                    path,
+                    'index.html',
+                ),
+            )
+        } else {
+            return null
+        }
+    }
+}
+
+function createUrlRewriteHandler(
+    c: ResolvedDankConfig,
+    htmlFiles: HtmlFilesDelegate,
+): ReqHandler {
+    return async (url, req) => {
+        if (isGetRequest(req) && isHtmlRequest(req)) {
+            const urlRewrite = c.urlRewrites?.find(urlRewrite =>
+                urlRewrite.pattern.test(url.pathname),
+            )
+            if (urlRewrite) {
+                return htmlFiles(urlRewrite.url)
+            }
+        }
+    }
+}
+
+function createDankDevApiHandler(c: ResolvedDankConfig): ReqHandler {
+    const dankDevApi = new DankDevApi(c)
+    return async (url, req) => {
+        if (isDankDevApiUrl(url)) {
+            return await invokeDankDevApiMethod(req, dankDevApi)
+        }
+    }
+}
+
+function createDevHttpServicesHandler(devServices: DevServices): ReqHandler {
+    return async (url, req) => {
+        return await tryHttpServices(
+            req,
+            url,
+            convertHeadersToFetch(req.headers),
+            devServices,
+        )
+    }
+}
+
+async function invokeDankDevApiMethod(
+    req: IncomingMessage,
+    api: DankDevApi,
+): Promise<Response> {
+    if (req.method !== 'POST') {
+        return new Response(null, { status: 405 })
+    } else if (!req.headers['content-type']?.startsWith('application/json')) {
+        return new Response(null, { status: 400 })
     } else {
-        res.end()
+        try {
+            const apiReq = await collectReqBody(req)
+            if (apiReq === null) {
+                return new Response(null, { status: 400 })
+            } else {
+                const apiRes = await api.invokeReq(JSON.parse(apiReq))
+                return Response.json(apiRes)
+            }
+        } catch (e) {
+            console.error('error during dank dev api: ' + (e as any).message)
+            return new Response(null, { status: 500 })
+        }
     }
 }
 
@@ -175,9 +354,7 @@ async function tryHttpServices(
             if (e === 'retrytimeout') {
                 continue
             } else {
-                errorExit(
-                    `unexpected error http proxying to port ${httpService.port}: ${e.message}`,
-                )
+                return new Response(null, { status: 502 })
             }
         }
     }
@@ -190,120 +367,6 @@ function collectReqBody(req: IncomingMessage): Promise<string | null> {
     return new Promise(res =>
         req.on('end', () => res(body.length ? body : null)),
     )
-}
-
-type RequestListener = (req: IncomingMessage, res: ServerResponse) => void
-function createLogWrapper(handler: RequestListener): RequestListener {
-    return (req, res) => {
-        console.log('  > ', req.method, req.url)
-        res.on('close', () => {
-            console.log('', res.statusCode, req.method, req.url)
-        })
-        handler(req, res)
-    }
-}
-
-// `dank preview` uses HtmlFileFetcher for serving index.html from a url rewrite
-// other index.html requests will be handled by FrontendFetcher and streamFile
-export function createBuiltDistHtmlFileFetcher(
-    dirs: DankDirectories,
-    manifest: WebsiteManifest,
-): HtmlFileFetcher {
-    return async url =>
-        manifest.pageUrls.includes(url)
-            ? await readFile(
-                  join(dirs.projectRootAbs, dirs.buildDist, url, 'index.html'),
-                  'utf8',
-              )
-            : null
-}
-
-export function createBuiltDistFilesFetcher(
-    dirs: DankDirectories,
-    manifest: WebsiteManifest,
-): FrontendFetcher {
-    return (
-        url: URL,
-        _headers: Headers,
-        res: ServerResponse,
-        notFound: () => void,
-    ) => {
-        if (manifest.pageUrls.includes(url.pathname as `/${string}`)) {
-            streamFile(
-                join(
-                    dirs.projectRootAbs,
-                    dirs.buildDist,
-                    url.pathname,
-                    'index.html',
-                ),
-                res,
-            )
-        } else if (manifest.files.includes(url.pathname as `/${string}`)) {
-            streamFile(
-                join(dirs.projectRootAbs, dirs.buildDist, url.pathname),
-                res,
-            )
-        } else {
-            notFound()
-        }
-    }
-}
-
-export function createDevServeFilesFetcher(
-    esbuildPort: number,
-    dirs: DankDirectories,
-    registry: WebsiteRegistry,
-    htmlFileFetcher: HtmlFileFetcher,
-): FrontendFetcher {
-    const proxyAddress = 'http://127.0.0.1:' + esbuildPort
-    return (
-        url: URL,
-        _headers: Headers,
-        res: ServerResponse,
-        notFound: () => void,
-    ) => {
-        if (registry.pageUrls.includes(url.pathname as `/${string}`)) {
-            htmlFileFetcher(url.pathname as `/${string}`).then(html =>
-                sendHtml(res, html),
-            )
-        } else {
-            const maybePublicPath = join(dirs.public, url.pathname)
-            exists(maybePublicPath).then(fromPublic => {
-                if (fromPublic) {
-                    streamFile(maybePublicPath, res)
-                } else {
-                    retryFetchWithTimeout(proxyAddress + url.pathname)
-                        .then(fetchResponse => {
-                            if (fetchResponse.status === 404) {
-                                notFound()
-                            } else {
-                                res.writeHead(
-                                    fetchResponse.status,
-                                    convertHeadersFromFetch(
-                                        fetchResponse.headers,
-                                    ),
-                                )
-                                fetchResponse
-                                    .bytes()
-                                    .then(data => res.end(data))
-                            }
-                        })
-                        .catch(e => {
-                            if (isFetchRetryTimeout(e)) {
-                                res.writeHead(504)
-                            } else {
-                                console.error(
-                                    'unknown frontend proxy fetch error:',
-                                    e,
-                                )
-                                res.writeHead(502)
-                            }
-                            res.end()
-                        })
-                }
-            })
-        }
-    }
 }
 
 const PROXY_FETCH_RETRY_INTERVAL = 27
@@ -349,19 +412,25 @@ async function exists(p: string): Promise<boolean> {
     try {
         const maybe = stat(p)
         return (await maybe).isFile()
-    } catch (ignore) {
+    } catch {
         return false
     }
 }
 
-function streamFile(p: string, res: ServerResponse) {
-    res.setHeader('Content-Type', mime.getType(p) || 'application/octet-stream')
-    const reading = createReadStream(p)
-    reading.pipe(res)
-    reading.on('error', err => {
-        console.error(`file read ${reading.path} error ${err.message}`)
-        res.statusCode = 500
-        res.end()
+function streamFile(
+    readStream: ReadStream,
+    res: ServerResponse,
+): Promise<void> {
+    const p =
+        typeof readStream.path === 'string'
+            ? readStream.path
+            : readStream.path.toString('utf8')
+    const contentType = mime.getType(p) || 'application/octet-stream'
+    res.setHeader('Content-Type', contentType)
+    readStream.pipe(res)
+    return new Promise((res, rej) => {
+        readStream.on('end', res)
+        readStream.on('error', rej)
     })
 }
 
@@ -383,19 +452,4 @@ function convertHeadersToFetch(from: IncomingHttpHeaders): Headers {
         }
     }
     return to
-}
-
-function sendHtml(res: ServerResponse, html: string | null) {
-    if (html) {
-        res.appendHeader('content-type', 'text/html')
-        res.write(html)
-    } else {
-        res.writeHead(404)
-    }
-    res.end()
-}
-
-function errorExit(msg: string): never {
-    console.log(`\u001b[31merror:\u001b[0m`, msg)
-    process.exit(1)
 }

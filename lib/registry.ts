@@ -43,12 +43,7 @@ type WebpageRegistration = {
     fsPath: string
     html: HtmlEntrypoint
     bundleEntrypoints: Array<EsbuildEntrypoint>
-    urlRewrite?: UrlRewrite
-}
-
-export type UrlRewrite = {
-    pattern: RegExp
-    url: `/${string}`
+    urlRewrite?: RegExp
 }
 
 export type WebsiteRegistryEvents = {
@@ -56,6 +51,8 @@ export type WebsiteRegistryEvents = {
     entrypoints: []
     // webpage added to website registry
     webpage: [entrypoint: HtmlEntrypoint]
+    // webpage removed from registry
+    'webpage-removed': [url: `/${string}`]
     // website worker entrypoints changed
     workers: []
 }
@@ -110,15 +107,6 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
 
     get resolver(): Resolver {
         return this.#resolver
-    }
-
-    get urlRewrites(): Array<UrlRewrite> {
-        return Object.values(this.#pages)
-            .filter(
-                (pr): pr is WebpageRegistration & { urlRewrite: UrlRewrite } =>
-                    typeof pr.urlRewrite !== 'undefined',
-            )
-            .map(pr => pr.urlRewrite)
     }
 
     get webpageEntryPoints(): Array<EsbuildEntrypoint> {
@@ -224,6 +212,22 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
 
     hasWebWorkers(): boolean {
         return !!this.#workers?.length
+    }
+
+    htmlModified(fsPath: string) {
+        this.htmlEntrypoints.forEach(html => {
+            if (html.fsPath === fsPath) {
+                html.emit('change')
+            } else if (html.usesPartial(fsPath)) {
+                html.emit('change', fsPath)
+            }
+        })
+    }
+
+    pageUrlsForHtmlFsPath(fsPath: string): Array<`/${string}`> {
+        return this.htmlEntrypoints
+            .filter(html => html.fsPath === fsPath)
+            .map(html => html.url)
     }
 
     mappedHref(lookup: string): string {
@@ -343,6 +347,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         }
         for (const prevPage of prevPages) {
             this.#configPageRemove(prevPage as `/${string}`)
+            this.emit('webpage-removed', prevPage as `/${string}`)
         }
     }
 
@@ -365,9 +370,7 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
             pageUrl: urlPath as `/${string}`,
             fsPath: mapping.webpage,
             html,
-            urlRewrite: mapping.pattern
-                ? { pattern: mapping.pattern, url: urlPath }
-                : undefined,
+            urlRewrite: mapping.pattern,
             bundleEntrypoints: [],
         }
         html.on('entrypoints', entrypoints =>
@@ -385,14 +388,10 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
             this.#configPageRemove(urlPath)
             this.#configPageAdd(urlPath, mapping)
         } else if (
-            existingRegistration.urlRewrite?.pattern.source !==
-            mapping.pattern?.source
+            existingRegistration.urlRewrite?.source !== mapping.pattern?.source
         ) {
             if (mapping.pattern) {
-                existingRegistration.urlRewrite = {
-                    url: urlPath,
-                    pattern: mapping.pattern,
-                }
+                existingRegistration.urlRewrite = mapping.pattern
             } else {
                 existingRegistration.urlRewrite = undefined
             }

@@ -103,7 +103,7 @@ const runMode: () => Promise<void> = (function resolveModeRunner() {
             }
         case 'preview':
             return async () => {
-                const { servePreview } = await import('./serve_preview.ts')
+                const { servePreview } = await import('./preview.ts')
                 await servePreview(await c)
             }
     }

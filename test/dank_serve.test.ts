@@ -12,9 +12,9 @@ suite('`dank serve`', () => {
             dankServing.on('error', assert.fail)
             dankServing.on('exit', assert.fail)
             await dankServing.start()
-            await dankServing.assertFetchStatus('/', 200)
-            await dankServing.assertFetchStatus('/dank.js', 200)
-            await dankServing.assertFetchStatus('/dank.css', 200)
+            await dankServing.assertFetchStatus('/', 'text/html', 200)
+            await dankServing.assertFetchStatus('/dank.js', null, 200)
+            await dankServing.assertFetchStatus('/dank.css', null, 200)
         })
 
         test('updates page to new html fs path', async () => {
@@ -29,7 +29,7 @@ suite('`dank serve`', () => {
                 `export default { pages: { '/': './dankest.html' } }`,
                 375,
             )
-            await dankServing.assertFetchText('/', 'Danky yoodle')
+            await dankServing.assertFetchText('/', 'text/html', 'Danky yoodle')
         })
 
         test('adds/removes html when file is added/removed', async () => {
@@ -41,11 +41,11 @@ suite('`dank serve`', () => {
 
             await rm(project.path('pages/dank.html'))
             await new Promise(res => setTimeout(res, 200))
-            await dankServing.assertFetchStatus('/', 404)
+            await dankServing.assertFetchStatus('/', 'text/html', 404)
 
             await project.update('pages/dank.html', '<p>Danky yoodle</p>')
             await new Promise(res => setTimeout(res, 200))
-            await dankServing.assertFetchText('/', 'Danky yoodle')
+            await dankServing.assertFetchText('/', 'text/html', 'Danky yoodle')
         })
     })
 
@@ -65,8 +65,8 @@ suite('`dank serve`', () => {
             dankServing.on('error', assert.fail)
             dankServing.on('exit', assert.fail)
             await dankServing.start()
-            await dankServing.assertFetchStatus('/asdf', 200)
-            await dankServing.assertFetchStatus('/configure', 200)
+            await dankServing.assertFetchStatus('/asdf', 'text/html', 200)
+            await dankServing.assertFetchStatus('/configure', 'text/html', 200)
         })
 
         test('matches tld in a github repo path', async () => {
@@ -84,24 +84,28 @@ suite('`dank serve`', () => {
             dankServing.on('error', assert.fail)
             dankServing.on('exit', assert.fail)
             await dankServing.start()
-            await dankServing.assertFetchStatus('/eighty4/sidelines.dev', 200)
+            await dankServing.assertFetchStatus(
+                '/eighty4/sidelines.dev',
+                'text/html',
+                200,
+            )
         })
 
         suite('config reload', () => {
-            test('picks up url rewrite', async () => {
+            test.only('picks up url rewrite', async () => {
                 const project = await createDank()
                 using dankServing = await project.serve()
                 dankServing.on('error', assert.fail)
                 dankServing.on('exit', assert.fail)
                 await dankServing.start()
-                await dankServing.assertFetchStatus('/', 200)
-                await dankServing.assertFetchStatus('/asdf', 404)
+                await dankServing.assertFetchStatus('/', 'text/html', 200)
+                await dankServing.assertFetchStatus('/asdf', 'text/html', 404)
 
                 await project.writeConfig(
                     `export default { pages: { '/': { pattern: /asdf/, webpage: './dank.html' } } }`,
                 )
-                await dankServing.assertFetchStatus('/', 200)
-                await dankServing.assertFetchStatus('/asdf', 200)
+                await dankServing.assertFetchStatus('/', 'text/html', 200)
+                await dankServing.assertFetchStatus('/asdf', 'text/html', 200)
             })
         })
     })
