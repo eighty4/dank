@@ -106,6 +106,6 @@ function makePrintableEsbuildLocation(location: Location): Array<string> {
     return [
         `    ${file}:${line}:${column}:`,
         `${(line + ' ').padStart(8)}│ ${lineBeforeHighlight}${green(lineHighlight)}${lineAfterHighlight}`,
-        `${' '.padStart(8)}╵ ${' '.padStart(lineBeforeHighlight.length)}${green(''.padStart(lineHighlight.length, '~'))}`,
+        `${''.padStart(8)}╵ ${''.padStart(lineBeforeHighlight.length)}${green(''.padStart(lineHighlight.length, '~'))}`,
     ]
 }
