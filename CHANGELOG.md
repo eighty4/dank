@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
-- ???
+### Fixed
+
+- Worker and SharedWorker instances without an explicit `module`
+  type are bundled with the `iife` output format
 
 ## [v0.0.6] - 2026-08-17
 

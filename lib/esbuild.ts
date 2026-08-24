@@ -77,11 +77,12 @@ export async function esbuildWorkers(
             entryPoints: mapEntryPointPaths(r.workerEntryPoints!),
             outdir: r.config.dirs.buildDist,
             ...commonBuildOptions(r),
+            loader: undefined,
+            format: 'iife',
             plugins: esbuildPlugins(r, wr),
             splitting: false,
             metafile: true,
             write: true,
-            assetNames: 'assets/[name]-[hash]',
         })
     } catch (e) {
         if (isEsbuildBuildFailure(e)) {

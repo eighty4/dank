@@ -187,6 +187,23 @@ new ${ctor}('./data-orchestration.ts')`,
         })
 
         suite('errors', () => {
+            suite('unsupported code for iife output', () => {
+                test('top-level await', async () => {
+                    for (const ctor of ['Worker', 'SharedWorker']) {
+                        const project = await createDank({
+                            files: {
+                                'pages/dank.ts': `new ${ctor}('./esm-tla.ts')`,
+                                'pages/esm-tla.ts': `await Promise.resolve('booboo')`,
+                            },
+                        })
+                        const result = await project.build()
+                        result.assertFailed()
+                        result.assertOutput(
+                            `Top-level await is not supported with the "iife" output format used to bundle web workers`,
+                        )
+                    }
+                })
+            })
             suite('unresolved worker ctor entrypoint', () => {
                 test('entrypoint with worker ctor', async () => {
                     for (const ctor of ['Worker', 'SharedWorker']) {
