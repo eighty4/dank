@@ -9,6 +9,9 @@
   all the website's entrypoints
 - Worker features are applied to Worker constructors used within
   Worker bundles, supporting recursive Worker workflows
+- Worker and SharedWorker scopes are verified when building
+  recursive web workers to prevent a Worker from creating a
+  SharedWorker or a SharedWorker from creating a Worker or SharedWorker
 
 ### Fixed
 

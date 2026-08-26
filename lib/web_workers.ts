@@ -1,7 +1,12 @@
-import type { Location, PartialMessage } from 'esbuild'
+import type { Location, Message, PartialMessage } from 'esbuild'
 import type { Resolver } from './dirs.ts'
+import { createTextOnlyEsbuildMessage } from './errors.ts'
 import { buildMessageLocation } from './esbuild_messages.ts'
-import type { WorkerCtorRegistration, WorkerType } from './registry.ts'
+import type {
+    WebsiteRegistry,
+    WorkerCtorRegistration,
+    WorkerType,
+} from './registry.ts'
 import { sourceReplace, type SourceReplacement } from './source_replace.ts'
 
 export type WorkerParseResult = {
@@ -192,4 +197,49 @@ function invalidWorkerUrlExtension(
             length: url.length - url.lastIndexOf('.'),
         },
     }
+}
+
+// todo add notes and location to esbuild Message
+export function verifyWorkerScopes(r: WebsiteRegistry): Array<Message> | null {
+    const workers = r.allWorkers
+    if (!workers) return null
+    const dedicatedWorkers: Set<string> = new Set()
+    const sharedWorkers: Set<String> = new Set()
+    for (const w of workers) {
+        for (const c of w.clients) {
+            if (c.ctor === 'SharedWorker') {
+                sharedWorkers.add(w.entrypoint)
+            } else {
+                dedicatedWorkers.add(w.entrypoint)
+            }
+        }
+    }
+    if (dedicatedWorkers.size || sharedWorkers.size) {
+        const messages: Array<Message> = []
+        for (const w of workers) {
+            for (const c of w.clients) {
+                if (sharedWorkers.has(c.script)) {
+                    messages.push(
+                        createTextOnlyEsbuildMessage(
+                            `\`${c.script}\` is built as a SharedWorker and is creating a ${c.ctor} of script \`${w.entrypoint}\`. SharedWorkers do not have the API to create Workers or SharedWorkers.`,
+                        ),
+                    )
+                }
+                if (
+                    dedicatedWorkers.has(c.script) &&
+                    c.ctor === 'SharedWorker'
+                ) {
+                    messages.push(
+                        createTextOnlyEsbuildMessage(
+                            `\`${c.script}\` is built as a Worker and is creating a ${c.ctor} of script \`${w.entrypoint}\`. Workers do not have the API to create SharedWorkers.`,
+                        ),
+                    )
+                }
+            }
+        }
+        if (messages.length) {
+            return messages
+        }
+    }
+    return null
 }

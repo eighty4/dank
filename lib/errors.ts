@@ -1,12 +1,12 @@
 import type { BuildFailure, Location, Message } from 'esbuild'
 import {
+    blackOnYellow,
     bold,
     gray,
     grayOnGreen,
     green,
     red,
     whiteOnRed,
-    whiteOnYellow,
     yellow,
 } from './ansi.ts'
 
@@ -16,6 +16,28 @@ export class DankError extends Error {
     constructor(message: string, cause?: Error) {
         super(message, { cause })
         this.name = 'DankError'
+    }
+}
+
+export class EsbuildError extends Error implements BuildFailure {
+    errors: Array<Message>
+    warnings: Array<Message>
+
+    constructor(errors: Array<Message>, warnings: Array<Message> = []) {
+        super('esbuild build failure')
+        this.errors = errors
+        this.warnings = warnings
+    }
+}
+
+export function createTextOnlyEsbuildMessage(text: string): Message {
+    return {
+        text,
+        notes: [],
+        pluginName: '',
+        location: null,
+        detail: null,
+        id: '',
     }
 }
 
@@ -78,7 +100,7 @@ function labelForErrors(): string {
 }
 
 function labelForWarnings(): string {
-    return `${yellow('✘')} ${whiteOnYellow(' WARNING ')}`
+    return `${yellow('▲')} ${blackOnYellow(' WARNING ')}`
 }
 
 function makePrintableEsbuildMessage(

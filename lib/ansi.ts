@@ -27,7 +27,7 @@ export const whiteOnRed =
     COLOR_DEPTH === 1 ? NO_COLOR : (s: string) => `\u001b[37;41m${s}\u001b[0m`
 
 export const yellow =
-    COLOR_DEPTH === 1 ? NO_COLOR : (s: string) => `\u001b[33m${s}\u001b[0m`
+    COLOR_DEPTH === 1 ? NO_COLOR : (s: string) => `\u001b[93m${s}\u001b[0m`
 
-export const whiteOnYellow =
-    COLOR_DEPTH === 1 ? NO_COLOR : (s: string) => `\u001b[37;43m${s}\u001b[0m`
+export const blackOnYellow =
+    COLOR_DEPTH === 1 ? NO_COLOR : (s: string) => `\u001b[30;43m${s}\u001b[0m`

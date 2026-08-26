@@ -10,7 +10,11 @@ import {
 } from 'esbuild'
 import type { DefineDankGlobal } from './define.ts'
 import type { DankDirectories } from './dirs.ts'
-import { isEsbuildBuildFailure, printEsbuildWarnings } from './errors.ts'
+import {
+    EsbuildError,
+    isEsbuildBuildFailure,
+    printEsbuildWarnings,
+} from './errors.ts'
 import {
     createErrorPlugin,
     enhanceEsbuildBuildFailure,
@@ -21,6 +25,7 @@ import type {
     WorkerBuildRegistry,
     WorkerType,
 } from './registry.ts'
+import { verifyWorkerScopes } from './web_workers.ts'
 
 const EXT_CSS_JS_TS = /\.(tsx?|jsx?|css|mts|mjs)$/
 
@@ -80,8 +85,15 @@ export async function esbuildWebsite(
             printEsbuildWarnings(warnings)
         }
         r.mergeBuiltBundles(metafile)
-        await writeDistOutputs(outputFiles!)
-        await writeMetafile(r.dirs, 'webpages.json', metafile)
+        const writingOutputs = Promise.all([
+            writeDistOutputs(outputFiles!),
+            writeMetafile(r.dirs, 'webpages.json', metafile),
+        ])
+        const workerWarnings = verifyWorkerScopes(r)
+        if (workerWarnings?.length) {
+            throw new EsbuildError(workerWarnings)
+        }
+        await writingOutputs
         return
     }
 }

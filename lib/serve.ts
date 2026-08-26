@@ -4,12 +4,14 @@ import { red } from './ansi.ts'
 import { type ResolvedDankConfig } from './config.ts'
 import { createGlobalDefinitions } from './define.ts'
 import { LOG } from './debug_log.ts'
+import { printEsbuildWarnings } from './errors.ts'
 import { esbuildDevContext } from './esbuild.ts'
 import { startWebServer } from './http.ts'
 import { WebsiteRegistry } from './registry.ts'
 import { DevServices } from './services.ts'
 import { configureDevServicesOutput } from './services_output.ts'
 import { watch, type WatchEventKind } from './watch.ts'
+import { verifyWorkerScopes } from './web_workers.ts'
 
 let c: ResolvedDankConfig
 
@@ -131,6 +133,10 @@ async function startDevMode() {
     })
 
     registry.on('workers', () => {
+        const workerWarnings = verifyWorkerScopes(registry)
+        if (workerWarnings?.length) {
+            printEsbuildWarnings(workerWarnings)
+        }
         LOG({
             realm: 'serve',
             message: 'registry updated worker entrypoints',

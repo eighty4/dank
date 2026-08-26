@@ -238,76 +238,118 @@ new ${ctor}('./worker.ts', {type: 'module'})
             })
             suite('recursive workers', () => {
                 test('classic worker recursively builds classic worker', async () => {
-                    for (const ctor of WORKER_CTORS) {
-                        const project = await createDank({
-                            files: {
-                                'pages/dank.ts': `new ${ctor}('./w1.ts')`,
-                                'pages/w1.ts': `new ${ctor}('./w2.ts')`,
-                                'pages/w2.ts': `console.log('w2')`,
-                            },
-                        })
-                        const result = await project.build()
-                        result.assertSuccess()
-                        await project.assertDistExists(
-                            '.lib/w/pages_w1.classic.js',
-                        )
-                        await project.assertDistExists(
-                            '.lib/w/pages_w2.classic.js',
-                        )
-                        await project.assertDistExists('dank.js')
-                    }
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `new Worker('./w1.ts')`,
+                            'pages/w1.ts': `new Worker('./w2.ts')`,
+                            'pages/w2.ts': `console.log('w2')`,
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertSuccess()
+                    await project.assertDistExists('.lib/w/pages_w1.classic.js')
+                    await project.assertDistExists('.lib/w/pages_w2.classic.js')
+                    await project.assertDistExists('dank.js')
                 })
                 test('module worker recursively builds module worker', async () => {
-                    for (const ctor of WORKER_CTORS) {
-                        const project = await createDank({
-                            files: {
-                                'pages/dank.ts': `new ${ctor}('./w1.ts', {type: 'module'})`,
-                                'pages/w1.ts': `new ${ctor}('./w2.ts', {type: 'module'})`,
-                                'pages/w2.ts': `console.log('w2')`,
-                            },
-                        })
-                        const result = await project.build()
-                        result.assertSuccess()
-                        await project.assertDistExists('.lib/w/pages_w1.esm.js')
-                        await project.assertDistExists('.lib/w/pages_w2.esm.js')
-                        await project.assertDistExists('dank.js')
-                    }
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `new Worker('./w1.ts', {type: 'module'})`,
+                            'pages/w1.ts': `new Worker('./w2.ts', {type: 'module'})`,
+                            'pages/w2.ts': `console.log('w2')`,
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertSuccess()
+                    await project.assertDistExists('.lib/w/pages_w1.esm.js')
+                    await project.assertDistExists('.lib/w/pages_w2.esm.js')
+                    await project.assertDistExists('dank.js')
                 })
                 test('classic worker recursively builds module worker', async () => {
-                    for (const ctor of WORKER_CTORS) {
-                        const project = await createDank({
-                            files: {
-                                'pages/dank.ts': `new ${ctor}('./w1.ts')`,
-                                'pages/w1.ts': `new ${ctor}('./w2.ts', {type: 'module'})`,
-                                'pages/w2.ts': `console.log('w2')`,
-                            },
-                        })
-                        const result = await project.build()
-                        result.assertSuccess()
-                        await project.assertDistExists(
-                            '.lib/w/pages_w1.classic.js',
-                        )
-                        await project.assertDistExists('.lib/w/pages_w2.esm.js')
-                        await project.assertDistExists('dank.js')
-                    }
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `new Worker('./w1.ts')`,
+                            'pages/w1.ts': `new Worker('./w2.ts', {type: 'module'})`,
+                            'pages/w2.ts': `console.log('w2')`,
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertSuccess()
+                    await project.assertDistExists('.lib/w/pages_w1.classic.js')
+                    await project.assertDistExists('.lib/w/pages_w2.esm.js')
+                    await project.assertDistExists('dank.js')
                 })
                 test('module worker recursively builds classic worker', async () => {
-                    for (const ctor of WORKER_CTORS) {
-                        const project = await createDank({
-                            files: {
-                                'pages/dank.ts': `new ${ctor}('./w1.ts', {type: 'module'})`,
-                                'pages/w1.ts': `new ${ctor}('./w2.ts')`,
-                                'pages/w2.ts': `console.log('w2')`,
-                            },
-                        })
-                        const result = await project.build()
-                        result.assertSuccess()
-                        await project.assertDistExists('.lib/w/pages_w1.esm.js')
-                        await project.assertDistExists(
-                            '.lib/w/pages_w2.classic.js',
-                        )
-                        await project.assertDistExists('dank.js')
-                    }
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `new Worker('./w1.ts', {type: 'module'})`,
+                            'pages/w1.ts': `new Worker('./w2.ts')`,
+                            'pages/w2.ts': `console.log('w2')`,
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertSuccess()
+                    await project.assertDistExists('.lib/w/pages_w1.esm.js')
+                    await project.assertDistExists('.lib/w/pages_w2.classic.js')
+                    await project.assertDistExists('dank.js')
+                })
+            })
+            suite('worker scope errors', () => {
+                test('when a Worker tries to make a SharedWorker', async () => {
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `new Worker('./w1.ts', {type: 'module'})`,
+                            'pages/w1.ts': `new SharedWorker('./w2.ts')`,
+                            'pages/w2.ts': `console.log('w2')`,
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertFailed()
+                })
+                test('when a SharedWorker tries to make a Worker', async () => {
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `new SharedWorker('./w1.ts', {type: 'module'})`,
+                            'pages/w1.ts': `new Worker('./w2.ts')`,
+                            'pages/w2.ts': `console.log('w2')`,
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertFailed()
+                    result.assertOutput(
+                        '`pages/w1.ts` is built as a SharedWorker and is creating a Worker of script `pages/w2.ts`. SharedWorkers do not have the API to create Workers or SharedWorkers.',
+                    )
+                })
+                test('when a SharedWorker tries to make a SharedWorker', async () => {
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `new SharedWorker('./w1.ts', {type: 'module'})`,
+                            'pages/w1.ts': `new SharedWorker('./w2.ts')`,
+                            'pages/w2.ts': `console.log('w2')`,
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertFailed()
+                    result.assertOutput(
+                        '`pages/w1.ts` is built as a SharedWorker and is creating a SharedWorker of script `pages/w2.ts`. SharedWorkers do not have the API to create Workers or SharedWorkers.',
+                    )
+                })
+                test('when a SharedWorker tries to make a Worker and a SharedWorker', async () => {
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `new SharedWorker('./w1.ts', {type: 'module'})`,
+                            'pages/w1.ts': `new Worker('./w2.ts'); new SharedWorker('./w2.ts')`,
+                            'pages/w2.ts': `console.log('w2')`,
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertFailed()
+                    result.assertOutput(
+                        '`pages/w1.ts` is built as a SharedWorker and is creating a Worker of script `pages/w2.ts`. SharedWorkers do not have the API to create Workers or SharedWorkers.',
+                    )
+                    result.assertOutput(
+                        '`pages/w1.ts` is built as a SharedWorker and is creating a SharedWorker of script `pages/w2.ts`. SharedWorkers do not have the API to create Workers or SharedWorkers.',
+                    )
                 })
             })
         })
