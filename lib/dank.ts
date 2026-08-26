@@ -1,5 +1,3 @@
-import type { Plugin as EsbuildPlugin } from 'esbuild'
-
 export type DankMode = 'build' | 'preview' | 'serve'
 
 // input to DankConfigFunction detailing a DANK process
@@ -90,9 +88,6 @@ export type EsbuildConfig = {
     // if not specified, defaults to support WOFF/WOFF2 fonts
     // with `{'.woff': 'file', '.woff2': 'file'}`
     loaders?: Record<`.${string}`, EsbuildLoader>
-
-    // documented on https://esbuild.github.io/plugins
-    plugins?: Array<EsbuildPlugin>
 
     // port used by esbuild.context() during `dank serve`
     // defaults to 3995

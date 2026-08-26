@@ -202,9 +202,6 @@ function esbuildPlugins(
               createErrorPlugin(r),
           ]
         : [createWorkersPlugin(wr)]
-    if (r.config.esbuild?.plugins?.length) {
-        p.push(...r.config.esbuild.plugins)
-    }
     return p
 }
 

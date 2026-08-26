@@ -18,6 +18,11 @@
 - Worker and SharedWorker instances without an explicit `module`
   type are bundled with the `iife` output format
 
+### Removed
+
+- `esbuild` plugins have been removed from `dank.config.ts` and as
+  an extension point for a DANK website
+
 ## [v0.0.6] - 2026-08-17
 
 ### Added

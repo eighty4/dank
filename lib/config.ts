@@ -359,13 +359,6 @@ function validateEsbuildConfig(esbuild?: EsbuildConfig) {
             }
         }
     }
-    if (esbuild?.plugins !== null && typeof esbuild?.plugins !== 'undefined') {
-        if (!Array.isArray(esbuild.plugins)) {
-            throw new DankError(
-                'DankConfig.esbuild.plugins must be an array of esbuild plugins',
-            )
-        }
-    }
     if (esbuild?.port !== null && typeof esbuild?.port !== 'undefined') {
         if (typeof esbuild.port !== 'number') {
             throw new DankError('DankConfig.esbuild.port must be a number')
