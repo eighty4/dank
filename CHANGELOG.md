@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Module type workers are built with `{type: module}` and build
+  module Workers and SharedWorkers with code splitting across
+  all the website's entrypoints
+- Worker features are applied to Worker constructors used within
+  Worker bundles, supporting recursive Worker workflows
+
 ### Fixed
 
 - Worker and SharedWorker instances without an explicit `module`

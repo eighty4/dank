@@ -1,8 +1,7 @@
 import type { Location, PartialMessage } from 'esbuild'
 import type { Resolver } from './dirs.ts'
-import type { EsbuildEntrypoint } from './esbuild.ts'
 import { buildMessageLocation } from './esbuild_messages.ts'
-import type { WorkerCtorRegistration } from './registry.ts'
+import type { WorkerCtorRegistration, WorkerType } from './registry.ts'
 import { sourceReplace, type SourceReplacement } from './source_replace.ts'
 
 export type WorkerParseResult = {
@@ -12,8 +11,11 @@ export type WorkerParseResult = {
 }
 
 const EXT_JS_TS = /\.(tsx?|jsx?|mjs|mts)$/
+const PATH_SEP_TO_UNDERSCORE = /[\/|\\]/g
 const WORKER_CTOR_REGEX =
     /new(?:\s|\r?\n)+(?<ctor>(?:Shared)?Worker)(?:\s|\r?\n)*\((?:\s|\r?\n)*(?<url>.*?)(?:\s|\r?\n)*(?<end>[),])/g
+const WORKER_CTOR_MODULE_REGEX =
+    /\((?:\s|\r?\n)*['"`][^'"`]+['"`](?:\s|\r?\n)*,(?:\s|\r?\n)*\{[^}]*?['"]?\btype['"]?(?:\s|\r?\n)*:(?:\s|\r?\n)*['"]module['"]/
 const WORKER_URL_STRING_REGEX = /^('.*'|".*")$/
 const WORKER_URL_REGEX = /^.*\.(ts|js|mts|mjs)$/
 
@@ -67,11 +69,11 @@ export function parseWorkerCtors(
         if (!clientScript) {
             clientScript = resolver.projectPathFromAbsolute(path)
         }
-        const workerProjectPath = resolver.resolvePagesRelativeHrefInProjectDir(
+        const entrypointIn = resolver.resolvePagesRelativeHrefInProjectDir(
             clientScript,
             originalCtorSrc,
         )
-        if (workerProjectPath === 'outofbounds') {
+        if (entrypointIn === 'outofbounds') {
             if (!errors) errors = []
             errors.push(
                 outofboundsWorkerUrlCtorArg(
@@ -87,27 +89,22 @@ export function parseWorkerCtors(
             continue
         }
         const ctor = workerCtorMatch.groups!.ctor as 'Worker' | 'SharedWorker'
-        const entrypoint: EsbuildEntrypoint = {
-            in: workerProjectPath,
-            out:
-                '.lib/' +
-                workerProjectPath
-                    .replace(EXT_JS_TS, '.js')
-                    .replaceAll('\\', '/'),
-        }
-        const placeholderCtorSrc: `/${string}` = `/${entrypoint.out}`
-        const workerCtorReplacement = `new ${ctor}('${placeholderCtorSrc}'${workerCtorMatch.groups!.end}`
+        const workerType = resolveWorkerTypeFromCtor(js, workerCtorMatch.index)
+        const entrypointOut = workerOutPathOf(entrypointIn, workerType)
+        const placeholderCtorSrc: `/${string}` = `/${entrypointOut}`
         replacements.push([
             workerCtorMatch.index,
             workerCtorMatch.index + workerCtorMatch[0].length,
-            workerCtorReplacement,
+            `new ${ctor}('${placeholderCtorSrc}'${workerCtorMatch.groups!.end}`,
         ])
         workers.push({
             clientScript,
             ctor,
-            entrypoint,
+            entrypointIn,
+            entrypointOut,
             originalCtorSrc,
             placeholderCtorSrc,
+            workerType,
         })
     }
     return {
@@ -115,6 +112,34 @@ export function parseWorkerCtors(
         result: replacements.length ? sourceReplace(js, replacements) : js,
         workers,
     }
+}
+
+export function workerOutPathOf(path: string, type: WorkerType): string {
+    return (
+        '.lib/w/' +
+        path
+            .replace(EXT_JS_TS, `.${type === 'module' ? 'esm' : 'classic'}.js`)
+            .replaceAll(PATH_SEP_TO_UNDERSCORE, '_')
+    )
+}
+
+function resolveWorkerTypeFromCtor(js: string, ctorIndex: number): WorkerType {
+    let ctorIndexEnd = -1
+    let parenOpen = 0
+    for (let i = ctorIndex; i < js.length; i++) {
+        const c = js.at(i)
+        if (c === '(') {
+            parenOpen++
+        } else if (c === ')') {
+            parenOpen--
+            if (parenOpen === 0) {
+                ctorIndexEnd = i + 1
+                break
+            }
+        }
+    }
+    const ctorJs = js.substring(ctorIndex, ctorIndexEnd)
+    return WORKER_CTOR_MODULE_REGEX.test(ctorJs) ? 'module' : 'classic'
 }
 
 function isIndexCommented(contents: string, index: number) {

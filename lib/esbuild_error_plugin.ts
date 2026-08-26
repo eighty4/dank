@@ -1,13 +1,14 @@
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path/posix'
 import type {
     BuildFailure,
     BuildResult,
     Location,
     Message,
+    Note,
     Plugin,
     PluginBuild,
 } from 'esbuild'
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path/posix'
 import type { DankDirectories } from './dirs.ts'
 import { buildMessageLocation } from './esbuild_messages.ts'
 import {
@@ -53,7 +54,7 @@ export async function enhanceEsbuildBuildFailure(
     )
     for (const m of e.errors) {
         if (isIifeTopLevelAwait(m)) {
-            enhanceIifeTopLevelAwaitMessage(m)
+            await enhanceIifeTopLevelAwaitMessage(r, m)
         } else {
             const unresolvedEntrypointMatch = unresolvedEntrypointPattern.exec(
                 m.text,
@@ -63,7 +64,7 @@ export async function enhanceEsbuildBuildFailure(
                     /^\.[\/\\]/,
                     '',
                 )
-                const w = r.workers!.find(w => w.entrypoint.in === p)
+                const w = r.allWorkers!.find(w => w.entrypoint === p)
                 if (w) {
                     await enhanceUnresolvedWorkerEntrypointMessage(r, m, p, w)
                 }
@@ -79,8 +80,35 @@ function isIifeTopLevelAwait(m: Message): boolean {
     )
 }
 
-function enhanceIifeTopLevelAwaitMessage(m: Message) {
-    m.text = `Top-level await is not supported with the "iife" output format used to bundle web workers`
+async function enhanceIifeTopLevelAwaitMessage(
+    r: WebsiteRegistry,
+    m: Message,
+): Promise<void> {
+    m.text = `Top-level await is not supported with the "iife" output format used to bundle classic web workers`
+    if (m.location?.file) {
+        const wp = m.location.file
+        const w = r.allWorkers?.find(w => w.entrypoint === wp)
+        if (w) {
+            m.notes = (
+                await Promise.all(
+                    w.clients.map<Promise<Note | null>>(async wc => {
+                        const location = await buildLocation(
+                            r.dirs,
+                            wc.script,
+                            workerUrlPattern(wc),
+                        )
+                        if (!location) {
+                            return null
+                        }
+                        return {
+                            text: `Upgrade to module workers for your ${wc.ctor} in "${wc.script}" with \`new ${wc.ctor}('${wc.originalCtorSrc}', {type: 'module'})\``,
+                            location,
+                        }
+                    }),
+                )
+            ).filter(n => n !== null)
+        }
+    }
 }
 
 async function enhanceUnresolvedWorkerEntrypointMessage(
@@ -91,7 +119,11 @@ async function enhanceUnresolvedWorkerEntrypointMessage(
 ) {
     const wc = w.clients[0]
     m.text = `Could not find ${wc.ctor} entrypoint "${unresolvePath}"`
-    const location = await buildLocationOfWorkerClient(r.config.dirs, wc)
+    const location = await buildLocation(
+        r.dirs,
+        wc.script,
+        workerUrlPattern(wc),
+    )
     if (location) {
         m.notes = [
             {
@@ -102,24 +134,28 @@ async function enhanceUnresolvedWorkerEntrypointMessage(
     }
 }
 
-async function buildLocationOfWorkerClient(
-    dirs: DankDirectories,
-    wc: WorkerClientManifest,
-): Promise<Location | null> {
-    const source = await readFile(join(dirs.projectRootAbs, wc.script), 'utf8')
+function workerUrlPattern(wc: WorkerClientManifest): RegExp {
     const workerUrl = RegExp.escape(wc.originalCtorSrc)
-    const sourcePattern = new RegExp(
-        `new(?:\\s|\\r?\\n)+${wc.ctor}(?:\\s|\\r?\\n)*\\((?:\\s|\\r?\\n)*(?<url>('${workerUrl}'|"${workerUrl}"))(?:\\s|\\r?\\n)*[),]`,
+    return new RegExp(
+        `new(?:\\s|\\r?\\n)+${wc.ctor}(?:\\s|\\r?\\n)*\\((?:\\s|\\r?\\n)*('${workerUrl}'|"${workerUrl}")(?:\\s|\\r?\\n)*[),]`,
     )
-    const sourceMatch = sourcePattern.exec(source)
-    if (!sourceMatch) {
+}
+
+async function buildLocation(
+    dirs: DankDirectories,
+    f: string,
+    p: RegExp,
+): Promise<Location | null> {
+    const source = await readFile(join(dirs.projectRootAbs, f), 'utf8')
+    const m = p.exec(source)
+    if (!m) {
         return null
     }
-
+    const highlight = m.at(-1)!
     return buildMessageLocation(
-        wc.script,
+        f,
         source,
-        sourceMatch.index + sourceMatch[0].indexOf(sourceMatch.groups!.url),
-        sourceMatch.groups!.url.length,
+        m.index + m[0].indexOf(highlight),
+        highlight.length,
     )
 }

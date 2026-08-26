@@ -135,7 +135,7 @@ async function startDevMode() {
             realm: 'serve',
             message: 'registry updated worker entrypoints',
             data: {
-                workers: registry.workerEntryPoints?.map(ep => ep.in) || null,
+                workers: registry.allWorkers?.map(w => w.entrypoint) || null,
             },
         })
         resetBuildContext()

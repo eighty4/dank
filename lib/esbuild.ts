@@ -1,8 +1,10 @@
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import {
     type BuildContext,
     type BuildOptions,
     type Metafile,
+    type OutputFile,
     build,
     context,
 } from 'esbuild'
@@ -14,7 +16,11 @@ import {
     enhanceEsbuildBuildFailure,
 } from './esbuild_error_plugin.ts'
 import { createWorkersPlugin } from './esbuild_worker_plugin.ts'
-import type { WebsiteRegistry, WorkerBuildRegistry } from './registry.ts'
+import type {
+    WebsiteRegistry,
+    WorkerBuildRegistry,
+    WorkerType,
+} from './registry.ts'
 
 const EXT_CSS_JS_TS = /\.(tsx?|jsx?|css|mts|mjs)$/
 
@@ -30,7 +36,7 @@ export async function esbuildDevContext(
         define,
         entryNames: '[dir]/[name]',
         entryPoints: mapEntryPointPaths(entryPoints),
-        outdir: r.config.dirs.buildDist,
+        outdir: r.dirs.buildDist,
         ...commonBuildOptions(r),
         minify: false,
         plugins: esbuildPlugins(r, wr, true),
@@ -39,64 +45,99 @@ export async function esbuildDevContext(
     })
 }
 
-export async function esbuildWebpages(
+export async function esbuildWebsite(
     r: WebsiteRegistry,
     define: DefineDankGlobal,
-    entryPoints: Array<EsbuildEntrypoint>,
 ): Promise<void> {
-    const wr = r.workerRegistry()
-    const { warnings, metafile } = await build({
-        define,
-        entryNames: '[dir]/[name]-[hash]',
-        entryPoints: mapEntryPointPaths(entryPoints),
-        outdir: r.config.dirs.buildDist,
-        ...commonBuildOptions(r),
-        plugins: esbuildPlugins(r, wr),
-    })
-    if (warnings.length) {
-        printEsbuildWarnings(warnings)
-    }
-    await writeMetafile(r.config.dirs, 'webpages.json', metafile)
-    r.mergeBuiltBundles(metafile)
-    r.mergeWorkerRegistry(metafile, wr)
-}
-
-export async function esbuildWorkers(
-    r: WebsiteRegistry,
-    define: DefineDankGlobal,
-): Promise<boolean> {
-    if (!r.hasWebWorkers()) {
-        return false
-    }
-    const wr = r.workerRegistry()
-    let result
-    try {
-        result = await build({
+    while (true) {
+        const moduleWorkers = r.workerEntryPoints('module')
+        const entrypoints = moduleWorkers?.length
+            ? [...r.webpageEntryPoints, ...moduleWorkers]
+            : r.webpageEntryPoints
+        const wr = r.workerRegistry()
+        const { warnings, metafile, outputFiles } = await build({
             define,
             entryNames: '[dir]/[name]-[hash]',
-            entryPoints: mapEntryPointPaths(r.workerEntryPoints!),
-            outdir: r.config.dirs.buildDist,
+            entryPoints: mapEntryPointPaths(entrypoints),
+            outdir: r.dirs.buildDist,
             ...commonBuildOptions(r),
-            loader: undefined,
-            format: 'iife',
             plugins: esbuildPlugins(r, wr),
-            splitting: false,
-            metafile: true,
-            write: true,
         })
-    } catch (e) {
-        if (isEsbuildBuildFailure(e)) {
-            await enhanceEsbuildBuildFailure(r, e)
+        let updatedWorkerTypes = r.mergeWorkerRegistry(metafile, wr)
+        if (updatedWorkerTypes.has('classic')) {
+            const classicBuildUpdatedWorkerTypes = await esbuildClassicWorkers(
+                r,
+                define,
+            )
+            if (classicBuildUpdatedWorkerTypes?.has('module')) {
+                updatedWorkerTypes.add('module')
+            }
         }
-        throw e
+        if (updatedWorkerTypes.has('module')) {
+            continue
+        }
+        if (warnings.length) {
+            printEsbuildWarnings(warnings)
+        }
+        r.mergeBuiltBundles(metafile)
+        await writeDistOutputs(outputFiles!)
+        await writeMetafile(r.dirs, 'webpages.json', metafile)
+        return
     }
-    const { warnings, metafile } = result
-    if (warnings.length) {
-        printEsbuildWarnings(warnings)
+}
+
+async function writeDistOutputs(outputFiles: Array<OutputFile>): Promise<void> {
+    await Promise.all(
+        outputFiles.map(async outputFile => {
+            await mkdir(dirname(outputFile.path), { recursive: true })
+            await writeFile(outputFile.path, outputFile.contents)
+        }),
+    )
+}
+
+async function esbuildClassicWorkers(
+    r: WebsiteRegistry,
+    define: DefineDankGlobal,
+): Promise<Set<WorkerType> | null> {
+    while (true) {
+        const classicWorkers = r.workerEntryPoints('classic')
+        if (!classicWorkers?.length) {
+            return null
+        }
+        const wr = r.workerRegistry()
+        let result
+        try {
+            result = await build({
+                define,
+                entryNames: '[dir]/[name]-[hash]',
+                entryPoints: mapEntryPointPaths(classicWorkers),
+                outdir: r.dirs.buildDist,
+                ...commonBuildOptions(r),
+                loader: undefined,
+                format: 'iife',
+                plugins: esbuildPlugins(r, wr),
+                splitting: false,
+                metafile: true,
+                write: true,
+            })
+        } catch (e) {
+            if (isEsbuildBuildFailure(e)) {
+                await enhanceEsbuildBuildFailure(r, e)
+            }
+            throw e
+        }
+        const { warnings, metafile } = result
+        const updatedWorkerTypes = r.mergeWorkerRegistry(metafile, wr)
+        if (updatedWorkerTypes?.has('classic')) {
+            continue
+        }
+        if (warnings.length) {
+            printEsbuildWarnings(warnings)
+        }
+        await writeMetafile(r.dirs, 'workers.json', metafile)
+        r.mergeBuiltBundles(metafile)
+        return updatedWorkerTypes
     }
-    await writeMetafile(r.config.dirs, 'workers.json', metafile)
-    r.mergeBuiltBundles(metafile)
-    return true
 }
 
 async function writeMetafile(
@@ -112,9 +153,10 @@ function commonBuildOptions(
 ): BuildOptions & { metafile: true } {
     return {
         logLevel: 'silent',
-        absWorkingDir: r.config.dirs.projectRootAbs,
+        absWorkingDir: r.dirs.projectRootAbs,
         assetNames: 'assets/[name]-[hash]',
         bundle: true,
+        chunkNames: '.lib/c/[name]-[hash]',
         format: 'esm',
         loader: r.config.esbuild?.loaders || defaultLoaders(),
         metafile: true,
@@ -122,7 +164,7 @@ function commonBuildOptions(
         platform: 'browser',
         splitting: true,
         treeShaking: true,
-        write: true,
+        write: false,
     }
 }
 

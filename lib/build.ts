@@ -3,8 +3,7 @@ import { join } from 'node:path'
 import { type ResolvedDankConfig } from './config.ts'
 import type { ServiceWorkerBuild, WebsiteManifest } from './dank.ts'
 import { type DefineDankGlobal, createGlobalDefinitions } from './define.ts'
-import type { DankDirectories } from './dirs.ts'
-import { esbuildWebpages, esbuildWorkers } from './esbuild.ts'
+import { esbuildWebsite } from './esbuild.ts'
 import { copyAssets } from './public.ts'
 import { WebsiteRegistry } from './registry.ts'
 
@@ -36,11 +35,8 @@ async function buildWebpages(
     registry.configSync()
     registry.copiedAssets = await copyAssets(c.dirs)
     await Promise.all(registry.htmlEntrypoints.map(html => html.process()))
-    await esbuildWebpages(registry, define, registry.webpageEntryPoints)
-
-    if (await esbuildWorkers(registry, define)) {
-        await rewriteWorkerUrls(c.dirs, registry)
-    }
+    await esbuildWebsite(registry, define)
+    await rewriteWorkerUrls(registry)
 
     // write out html output with rewritten hrefs
     await Promise.all(
@@ -67,12 +63,9 @@ async function buildWebpages(
     return registry
 }
 
-async function rewriteWorkerUrls(
-    dirs: DankDirectories,
-    registry: WebsiteRegistry,
-) {
-    const workers = registry.workers
-    if (!workers) {
+async function rewriteWorkerUrls(r: WebsiteRegistry) {
+    const workers = r.allWorkers
+    if (!workers?.length) {
         return
     }
     const dependentBundlePaths = Array.from(
@@ -85,7 +78,7 @@ async function rewriteWorkerUrls(
     const readingFiles = Promise.all(
         dependentBundlePaths.map(async p => {
             bundleOutputs[p] = await readFile(
-                join(dirs.projectRootAbs, dirs.buildDist, p),
+                join(r.dirs.projectRootAbs, r.dirs.buildDist, p),
                 'utf8',
             )
         }),
@@ -98,9 +91,9 @@ async function rewriteWorkerUrls(
         for (const c of w.clients) {
             rewriteChains[c.bundle].push(s =>
                 s.replace(
-                    createWorkerRegex(c.ctor, w.placeholderCtorSrc),
+                    createWorkerRegex(c.ctor, c.placeholderCtorSrc),
                     match =>
-                        `new ${c.ctor}('${registry.mappedHref(w.entrypoint.in)}'` +
+                        `new ${c.ctor}('${r.mappedHref(w.entrypoint)}'` +
                         match.at(-1),
                 ),
             )
@@ -118,7 +111,7 @@ async function rewriteWorkerUrls(
                 result = rewriteFn(result)
             }
             await writeFile(
-                join(dirs.projectRootAbs, dirs.buildDist, p),
+                join(r.dirs.projectRootAbs, r.dirs.buildDist, p),
                 result,
             )
         }),

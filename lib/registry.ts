@@ -23,19 +23,33 @@ export type WorkerManifest = {
     // instances of scripts using worker
     clients: Array<WorkerClientManifest>
     // entrypoint of worker
-    entrypoint: EsbuildEntrypoint
-    placeholderCtorSrc: `/${string}`
+    entrypoint: EsbuildEntrypoint['in']
 }
 
 export type WorkerClientManifest = {
     // entrypoint or chunk build/dist subpath
     bundle: `/${string}`
     ctor: 'Worker' | 'SharedWorker'
+    entrypointOut: EsbuildEntrypoint['out']
     // original ctor url replaced with placeholderCtorSrc
     originalCtorSrc: string
+    placeholderCtorSrc: `/${string}`
     // path to script with Worker ctor call
     // matches `esbuild.Metafile.outputs` entrypoint or inputs path
     script: string
+    workerType: WorkerType
+}
+
+export type WorkerType = 'module' | 'classic'
+
+function workerTypesOfWorkers(workers: Array<WorkerManifest>): Set<WorkerType> {
+    return new Set(workers.flatMap(w => w.clients.map(c => c.workerType)))
+}
+
+function workerTypesOfClients(
+    clients: Array<WorkerClientManifest>,
+): Set<WorkerType> {
+    return new Set(clients.map(c => c.workerType))
 }
 
 type WebpageRegistration = {
@@ -89,6 +103,10 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
             copiedAssets === null ? null : new Set(copiedAssets)
     }
 
+    get dirs(): DankDirectories {
+        return this.#c.dirs
+    }
+
     get htmlEntrypoints(): Array<HtmlEntrypoint> {
         return Object.values(this.#pages).map(p => p.html)
     }
@@ -123,31 +141,57 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
             })
     }
 
+    // unique entrypoints for webpage bundling
+    // skips deduping worker entrypoints for esm and classic builds of same js
     get webpageAndWorkerEntryPoints(): Array<EsbuildEntrypoint> {
         const unique: Set<EsbuildEntrypoint['in']> = new Set()
-        const pageBundles = Object.values(this.#pages).flatMap(
-            p => p.bundleEntrypoints,
-        )
-        const workerBundles = this.workerEntryPoints
-        const bundles = workerBundles
-            ? [...pageBundles, ...workerBundles]
-            : pageBundles
-        return bundles.filter(entryPoint => {
-            if (unique.has(entryPoint.in)) {
-                return false
-            } else {
-                unique.add(entryPoint.in)
-                return true
-            }
-        })
+        const pageBundles = Object.values(this.#pages)
+            .flatMap(p => p.bundleEntrypoints)
+            .filter(entryPoint => {
+                if (unique.has(entryPoint.in)) {
+                    return false
+                } else {
+                    unique.add(entryPoint.in)
+                    return true
+                }
+            })
+        const workerBundles = this.workerEntryPoints()
+        return workerBundles ? [...pageBundles, ...workerBundles] : pageBundles
     }
 
-    get workerEntryPoints(): Array<EsbuildEntrypoint> | null {
-        return this.#workers?.map(w => w.entrypoint) || null
-    }
-
-    get workers(): Array<WorkerManifest> | null {
+    get allWorkers(): Array<WorkerManifest> | null {
         return this.#workers
+    }
+
+    workersOfType(workerType: WorkerType): Array<WorkerManifest> | null {
+        if (this.#workers?.length) {
+            return this.#workers.filter(w =>
+                w.clients.some(c => c.workerType === workerType),
+            )
+        } else {
+            return null
+        }
+    }
+
+    workerEntryPoints(
+        workerType?: WorkerType,
+    ): Array<EsbuildEntrypoint> | null {
+        const workers = workerType
+            ? this.workersOfType(workerType)
+            : this.allWorkers
+        if (!workers) {
+            return null
+        }
+        const filterClients = workerType
+            ? (c: WorkerClientManifest) => c.workerType === workerType
+            : () => true
+        return workers.flatMap(w =>
+            Array.from(
+                new Set(
+                    w.clients.filter(filterClients).map(c => c.entrypointOut),
+                ),
+            ).map(out => ({ in: w.entrypoint, out })),
+        )
     }
 
     // explicit add build output to registry & write to build/dist
@@ -278,31 +322,80 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
         }
     }
 
-    mergeWorkerRegistry(build: Metafile, workerRegistry: WorkerBuildRegistry) {
-        const workers = workerRegistry.resolveWorkers(build)
-        // determine if worker entrypoints have changed before merging
-        const updatedWorkerEntrypoints =
-            this.#doesBuildUpdateWorkerEntrypoints(workers)
+    mergeWorkerRegistry(
+        build: Metafile,
+        workerRegistry: WorkerBuildRegistry,
+    ): Set<WorkerType> {
+        const registering = workerRegistry.resolveWorkers(build)
+        const emitEvent =
+            this.#c.mode === 'serve' &&
+            this.#doDevWorkerEntryPointsChange(registering)
+        let updated: Set<WorkerType> = new Set()
+        if (registering?.length) {
+            if (!this.#workers) {
+                this.#workers = registering
+                updated = workerTypesOfWorkers(registering)
+            } else {
+                for (const rw of registering) {
+                    const w = this.#workers?.find(
+                        w => w.entrypoint === rw.entrypoint,
+                    )
+                    if (w) {
+                        updated = updated.union(
+                            this.#mergeWorkerRegistration(w, rw),
+                        )
+                    } else {
+                        this.#workers.push(rw)
+                        updated = updated.union(
+                            workerTypesOfClients(rw.clients),
+                        )
+                    }
+                }
+            }
+        }
         LOG({
             realm: 'registry',
             message: 'build completed',
             data: {
-                updatedWorkerEntrypoints,
-                workers: workers?.length || 0,
+                registeredWorkers: registering?.length || 0,
             },
         })
-        this.#workers = workers
-        if (updatedWorkerEntrypoints) {
+        if (emitEvent) {
             this.emit('workers')
         }
+        return updated
     }
 
-    #doesBuildUpdateWorkerEntrypoints(
+    #mergeWorkerRegistration(
+        registered: WorkerManifest,
+        registering: WorkerManifest,
+    ): Set<WorkerType> {
+        const updated: Set<WorkerType> = new Set()
+        for (const rc of registering.clients) {
+            const alreadyRegistered = registered.clients.find(
+                c => rc.script === c.script && rc.workerType === c.workerType,
+            )
+            if (alreadyRegistered) {
+                alreadyRegistered.bundle = rc.bundle
+            } else {
+                const addUpdated = registered.clients.every(
+                    c => rc.workerType !== c.workerType,
+                )
+                if (addUpdated) {
+                    updated.add(rc.workerType)
+                }
+                registered.clients.push(rc)
+            }
+        }
+        return updated
+    }
+
+    #doDevWorkerEntryPointsChange(
         workers: Array<Omit<WorkerManifest, 'clientEntrypoint'>> | null,
     ): boolean {
         if (this.#workers && workers) {
-            const next = new Set(workers.map(w => w.entrypoint.in))
-            const prev = new Set(this.#workers.map(w => w.entrypoint.in))
+            const next = new Set(workers.map(w => w.entrypoint))
+            const prev = new Set(this.#workers.map(w => w.entrypoint))
             return (
                 next.size !== prev.size ||
                 next.symmetricDifference(prev).size !== 0
@@ -451,9 +544,11 @@ export class WebsiteRegistry extends EventEmitter<WebsiteRegistryEvents> {
 export type WorkerCtorRegistration = {
     clientScript: string
     ctor: 'Worker' | 'SharedWorker'
-    entrypoint: EsbuildEntrypoint
+    entrypointIn: EsbuildEntrypoint['in']
+    entrypointOut: EsbuildEntrypoint['out']
     originalCtorSrc: string
     placeholderCtorSrc: `/${string}`
+    workerType: WorkerType
 }
 
 // result accumulator of an esbuild `build` or `Context.rebuild`
@@ -483,34 +578,36 @@ export class WorkerBuildRegistry {
         }
         const workers: Array<WorkerManifest> = []
         const clients: Record<
-            WorkerManifest['placeholderCtorSrc'],
+            EsbuildEntrypoint['in'],
             Array<WorkerClientManifest>
         > = {}
         for (const [bundle, output] of Object.entries(build.outputs)) {
             const inputs = Object.keys(output.inputs)
             for (const worker of this.#workers) {
                 if (inputs.includes(worker.clientScript)) {
-                    const client = {
+                    const client: WorkerClientManifest = {
                         bundle: stripBuildDir(bundle),
                         ctor: worker.ctor,
+                        entrypointOut: worker.entrypointOut,
                         originalCtorSrc: worker.originalCtorSrc,
+                        placeholderCtorSrc: worker.placeholderCtorSrc,
                         script: worker.clientScript,
+                        workerType: worker.workerType,
                     }
-                    if (clients[worker.placeholderCtorSrc]) {
-                        clients[worker.placeholderCtorSrc].push(client)
+                    if (clients[worker.entrypointIn]) {
+                        clients[worker.entrypointIn].push(client)
                     } else {
                         workers.push({
                             clients: [],
-                            entrypoint: worker.entrypoint,
-                            placeholderCtorSrc: worker.placeholderCtorSrc,
+                            entrypoint: worker.entrypointIn,
                         })
-                        clients[worker.placeholderCtorSrc] = [client]
+                        clients[worker.entrypointIn] = [client]
                     }
                 }
             }
         }
         for (const worker of workers) {
-            worker.clients = clients[worker.placeholderCtorSrc]
+            worker.clients = clients[worker.entrypoint]
         }
         return workers
     }

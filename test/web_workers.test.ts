@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { suite, test } from 'node:test'
 import { createWorkerRegex } from '../lib/build.ts'
+import { defaultProjectDirs, Resolver } from '../lib/dirs.ts'
+import { parseWorkerCtors, workerOutPathOf } from '../lib/web_workers.ts'
+import type { WorkerCtorRegistration } from '../lib/registry.ts'
 import { createDank } from './dank_project_testing.ts'
+
+const WORKER_CTORS = ['Worker', 'SharedWorker']
 
 suite('Web workers', () => {
     suite('`dank build`', () => {
@@ -52,7 +58,7 @@ w = 'w' // new SharedWorker('./partial-line.ts')`,
 
         suite('rewriting worker url with build hash', () => {
             test('with path ctor arg only', async () => {
-                for (const ctor of ['Worker', 'SharedWorker']) {
+                for (const ctor of WORKER_CTORS) {
                     const project = await createDank({
                         files: {
                             'pages/dank.ts': `\
@@ -66,18 +72,18 @@ w = 'w' // new SharedWorker('./partial-line.ts')`,
                     await project.assertDistContent(
                         'dank.ts',
                         new RegExp(
-                            `new ${ctor}\\('\\/\\.lib\\/pages\\/computational-wizardry-[A-Z\\d]{8}\\.js'\\)`,
+                            `new ${ctor}\\('\\/\\.lib\\/w\\/pages_computational-wizardry\\.classic-[A-Z\\d]{8}\\.js'\\)`,
                             'g',
                         ),
                     )
                     await project.assertDistExists(
-                        '.lib/pages/computational-wizardry.ts',
+                        '.lib/w/pages_computational-wizardry.classic.ts',
                     )
                 }
             })
 
             test('with path & opts ctor args', async () => {
-                for (const ctor of ['Worker', 'SharedWorker']) {
+                for (const ctor of WORKER_CTORS) {
                     const project = await createDank({
                         files: {
                             'pages/dank.ts': `\
@@ -93,18 +99,18 @@ w = 'w' // new SharedWorker('./partial-line.ts')`,
                     await project.assertDistContent(
                         'dank.ts',
                         new RegExp(
-                            `new ${ctor}\\('\\/\\.lib\\/pages\\/computational-wizardry-[A-Z\\d]{8}\\.js',`,
+                            `new ${ctor}\\('\\/\\.lib\\/w\\/pages_computational-wizardry.classic-[A-Z\\d]{8}\\.js',`,
                             'g',
                         ),
                     )
                     await project.assertDistExists(
-                        '.lib/pages/computational-wizardry.ts',
+                        '.lib/w/pages_computational-wizardry.classic.ts',
                     )
                 }
             })
 
             test('registers client for each ctor in script', async () => {
-                for (const ctor of ['Worker', 'SharedWorker']) {
+                for (const ctor of WORKER_CTORS) {
                     const project = await createDank({
                         files: {
                             'pages/dank.ts': `\
@@ -127,7 +133,7 @@ w = 'w' // new SharedWorker('./partial-line.ts')`,
             })
 
             test('registers client for ctors in multiple scripts', async () => {
-                for (const ctor of ['Worker', 'SharedWorker']) {
+                for (const ctor of WORKER_CTORS) {
                     const project = await createDank({
                         files: {
                             'pages/dank.html': `\
@@ -155,7 +161,7 @@ w = 'w' // new SharedWorker('./partial-line.ts')`,
             })
 
             test('rewrites at correct offset for multiple workers', async () => {
-                for (const ctor of ['SharedWorker', 'Worker'] as const) {
+                for (const ctor of WORKER_CTORS) {
                     const project = await createDank({
                         files: {
                             'pages/dank.ts': `\
@@ -170,43 +176,167 @@ new ${ctor}('./data-orchestration.ts')`,
                     result.assertSuccess()
                     await project.assertDistContent(
                         'dank.js',
-                        `new ${ctor}('/.lib/pages/computational-wizardry`,
+                        `new ${ctor}('/.lib/w/pages_computational-wizardry.classic`,
                     )
                     await project.assertDistContent(
                         'dank.js',
-                        `new ${ctor}('/.lib/pages/data-orchestration`,
+                        `new ${ctor}('/.lib/w/pages_data-orchestration.classic`,
                     )
                     await project.assertDistExists(
-                        '.lib/pages/computational-wizardry.js',
+                        '.lib/w/pages_computational-wizardry.classic.js',
                     )
                     await project.assertDistExists(
-                        '.lib/pages/data-orchestration.js',
+                        '.lib/w/pages_data-orchestration.classic.js',
                     )
                 }
+            })
+        })
+
+        suite('module worker', () => {
+            test('rebuilds with module worker and split code', async () => {
+                for (const ctor of WORKER_CTORS) {
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `import {getMashUpCostume} from './api.ts'; console.log(getMashUpCostume()); new ${ctor}('./worker.ts', {type: 'module'})`,
+                            'pages/api.ts': `export const getMashUpCostume = () => 'Natalie Portugal the Man'`,
+                            'pages/worker.ts': `import {getMashUpCostume} from './api.ts'; console.log(await Promise.resolve(getMashUpCostume()))`,
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertSuccess()
+                    await project.assertDistExists('.lib/w/pages_worker.esm.js')
+                    await project.assertDistExists('.lib/c/chunk.js')
+                    await project.assertDistExists('dank.js')
+                }
+            })
+            test('classic and module worker of same script', async () => {
+                for (const ctor of WORKER_CTORS) {
+                    const project = await createDank({
+                        files: {
+                            'pages/dank.ts': `\
+import {getMashUpCostume} from './api.ts'
+console.log(getMashUpCostume())
+new ${ctor}('./worker.ts')
+new ${ctor}('./worker.ts', {type: 'module'})
+`,
+                            'pages/api.ts': `export const getMashUpCostume = () => 'Natalie Portugal the Man'`,
+                            'pages/worker.ts': `import {getMashUpCostume} from './api.ts'; console.log(getMashUpCostume())`,
+                        },
+                    })
+                    const result = await project.build()
+                    result.assertSuccess()
+                    await project.assertDistExists(
+                        '.lib/w/pages_worker.classic.js',
+                    )
+                    await project.assertDistExists(
+                        '.lib/w/pages_worker.classic.js',
+                    )
+                    await project.assertDistExists('.lib/w/pages_worker.esm.js')
+                    await project.assertDistExists('.lib/c/chunk.js')
+                    await project.assertDistExists('dank.js')
+                }
+            })
+            suite('recursive workers', () => {
+                test('classic worker recursively builds classic worker', async () => {
+                    for (const ctor of WORKER_CTORS) {
+                        const project = await createDank({
+                            files: {
+                                'pages/dank.ts': `new ${ctor}('./w1.ts')`,
+                                'pages/w1.ts': `new ${ctor}('./w2.ts')`,
+                                'pages/w2.ts': `console.log('w2')`,
+                            },
+                        })
+                        const result = await project.build()
+                        result.assertSuccess()
+                        await project.assertDistExists(
+                            '.lib/w/pages_w1.classic.js',
+                        )
+                        await project.assertDistExists(
+                            '.lib/w/pages_w2.classic.js',
+                        )
+                        await project.assertDistExists('dank.js')
+                    }
+                })
+                test('module worker recursively builds module worker', async () => {
+                    for (const ctor of WORKER_CTORS) {
+                        const project = await createDank({
+                            files: {
+                                'pages/dank.ts': `new ${ctor}('./w1.ts', {type: 'module'})`,
+                                'pages/w1.ts': `new ${ctor}('./w2.ts', {type: 'module'})`,
+                                'pages/w2.ts': `console.log('w2')`,
+                            },
+                        })
+                        const result = await project.build()
+                        result.assertSuccess()
+                        await project.assertDistExists('.lib/w/pages_w1.esm.js')
+                        await project.assertDistExists('.lib/w/pages_w2.esm.js')
+                        await project.assertDistExists('dank.js')
+                    }
+                })
+                test('classic worker recursively builds module worker', async () => {
+                    for (const ctor of WORKER_CTORS) {
+                        const project = await createDank({
+                            files: {
+                                'pages/dank.ts': `new ${ctor}('./w1.ts')`,
+                                'pages/w1.ts': `new ${ctor}('./w2.ts', {type: 'module'})`,
+                                'pages/w2.ts': `console.log('w2')`,
+                            },
+                        })
+                        const result = await project.build()
+                        result.assertSuccess()
+                        await project.assertDistExists(
+                            '.lib/w/pages_w1.classic.js',
+                        )
+                        await project.assertDistExists('.lib/w/pages_w2.esm.js')
+                        await project.assertDistExists('dank.js')
+                    }
+                })
+                test('module worker recursively builds classic worker', async () => {
+                    for (const ctor of WORKER_CTORS) {
+                        const project = await createDank({
+                            files: {
+                                'pages/dank.ts': `new ${ctor}('./w1.ts', {type: 'module'})`,
+                                'pages/w1.ts': `new ${ctor}('./w2.ts')`,
+                                'pages/w2.ts': `console.log('w2')`,
+                            },
+                        })
+                        const result = await project.build()
+                        result.assertSuccess()
+                        await project.assertDistExists('.lib/w/pages_w1.esm.js')
+                        await project.assertDistExists(
+                            '.lib/w/pages_w2.classic.js',
+                        )
+                        await project.assertDistExists('dank.js')
+                    }
+                })
             })
         })
 
         suite('errors', () => {
             suite('unsupported code for iife output', () => {
                 test('top-level await', async () => {
-                    for (const ctor of ['Worker', 'SharedWorker']) {
+                    for (const ctor of WORKER_CTORS) {
                         const project = await createDank({
                             files: {
                                 'pages/dank.ts': `new ${ctor}('./esm-tla.ts')`,
-                                'pages/esm-tla.ts': `await Promise.resolve('booboo')`,
+                                'pages/esm-tla.ts': `await Promise.resolve('modern feature')`,
                             },
                         })
                         const result = await project.build()
                         result.assertFailed()
-                        result.assertOutput(
-                            `Top-level await is not supported with the "iife" output format used to bundle web workers`,
+                        result.assertOrderedOutput(
+                            `Top-level await is not supported with the "iife" output format used to bundle classic web workers`,
+                            'pages/esm-tla.ts:1:0:',
+                            `1 │ await Promise.resolve('modern feature')`,
+                            `Upgrade to module workers for your ${ctor} in "pages/dank.ts" with \`new ${ctor}('./esm-tla.ts', {type: 'module'})\``,
+                            `1 │ new ${ctor}('./esm-tla.ts')`,
                         )
                     }
                 })
             })
             suite('unresolved worker ctor entrypoint', () => {
                 test('entrypoint with worker ctor', async () => {
-                    for (const ctor of ['Worker', 'SharedWorker']) {
+                    for (const ctor of WORKER_CTORS) {
                         const project = await createDank({
                             files: {
                                 'pages/dank.ts': `new ${ctor}('./notworker.ts')`,
@@ -214,20 +344,15 @@ new ${ctor}('./data-orchestration.ts')`,
                         })
                         const result = await project.build()
                         result.assertFailed()
-                        result.assertOutput(
+                        result.assertOrderedOutput(
                             `Could not find ${ctor} entrypoint "pages/notworker.ts"`,
-                        )
-                        result.assertOutput(
                             `The ${ctor} entrypoint was found in "pages/dank.ts":`,
-                        )
-                        result.assertOutput(
                             `pages/dank.ts:1:${'new ('.length + ctor.length}:`,
                         )
                     }
                 })
                 test('one module with two workers unresolved', async () => {
-                    for (const ctor of ['Worker', 'SharedWorker']) {
-                        if (ctor === 'SharedWorker') continue
+                    for (const ctor of WORKER_CTORS) {
                         const project = await createDank({
                             files: {
                                 'pages/dank.ts': `new ${ctor}('./notworker.ts')\nnew ${ctor}('./andmeneither.ts')`,
@@ -265,14 +390,14 @@ new ${ctor}('./data-orchestration.ts')`,
             dankServing.on('exit', assert.fail)
             await dankServing.start()
             await dankServing.assertFetchStatus(
-                '/.lib/pages/computational-wizardry.js',
+                '/.lib/w/pages_computational-wizardry.classic.js',
                 null,
                 200,
             )
             await dankServing.assertFetchText(
                 '/dank.js',
                 null,
-                `new Worker("/.lib/pages/computational-wizardry.js")`,
+                `new Worker("/.lib/w/pages_computational-wizardry.classic.js")`,
             )
         })
         test('worker url placeholder not whack', async () => {
@@ -296,18 +421,80 @@ new ${ctor}('./data-orchestration.ts')`,
             dankServing.on('exit', assert.fail)
             await dankServing.start()
             await dankServing.assertFetchStatus(
-                '/.lib/workers/feature/computational-wizardry.js',
+                '/.lib/w/workers_feature_computational-wizardry.classic.js',
                 null,
                 200,
             )
             await dankServing.assertFetchText(
                 '/feature/dank.js',
                 null,
-                `new Worker("/.lib/workers/feature/computational-wizardry.js")`,
+                `new Worker("/.lib/w/workers_feature_computational-wizardry.classic.js")`,
+            )
+        })
+        test('with module worker', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.ts': `new Worker('./w.ts', {type: 'module'})`,
+                    'pages/w.ts': '',
+                },
+            })
+            using dankServing = await project.serve()
+            dankServing.on('error', assert.fail)
+            dankServing.on('exit', assert.fail)
+            await dankServing.start()
+            await dankServing.assertFetchStatus(
+                '/.lib/w/pages_w.esm.js',
+                null,
+                200,
+            )
+        })
+        test('with classic and module builds of same worker', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.ts': `new Worker('./w.ts'); new Worker('./w.ts', {type: 'module'})`,
+                    'pages/w.ts': '',
+                },
+            })
+            using dankServing = await project.serve()
+            dankServing.on('error', assert.fail)
+            dankServing.on('exit', assert.fail)
+            await dankServing.start()
+            await dankServing.assertFetchStatus(
+                '/.lib/w/pages_w.classic.js',
+                null,
+                200,
+            )
+            await dankServing.assertFetchStatus(
+                '/.lib/w/pages_w.esm.js',
+                null,
+                200,
+            )
+        })
+        test('with recursive worker', async () => {
+            const project = await createDank({
+                files: {
+                    'pages/dank.ts': `new Worker('./w1.ts')`,
+                    'pages/w1.ts': `new Worker('./w2.ts', {type: 'module'})`,
+                    'pages/w2.ts': '',
+                },
+            })
+            using dankServing = await project.serve()
+            dankServing.on('error', assert.fail)
+            dankServing.on('exit', assert.fail)
+            await dankServing.start()
+            await dankServing.assertFetchStatus(
+                '/.lib/w/pages_w1.classic.js',
+                null,
+                200,
+            )
+            await dankServing.assertFetchStatus(
+                '/.lib/w/pages_w2.esm.js',
+                null,
+                200,
             )
         })
     })
-    suite('build.lib', () => {
+    suite('lib build.ts', () => {
         suite('createWorkerRegex', () => {
             test('matches Worker ctor', () => {
                 const regex = createWorkerRegex(
@@ -341,6 +528,70 @@ new ${ctor}('./data-orchestration.ts')`,
                 assert.equal(
                     [script, script, script].join(' ').replace(regex, worker),
                     [worker, worker, worker].join(' '),
+                )
+            })
+        })
+    })
+
+    suite('lib web_workers.ts', () => {
+        suite('parseWorkerCtors', () => {
+            test('resolves module worker', async () => {
+                const resolver = Resolver.create(
+                    await defaultProjectDirs(import.meta.dirname),
+                )
+                const js = `new Worker('./w.ts', {type: 'module'})\nconsole.log('created a worker!')`
+                const parseResult = parseWorkerCtors(
+                    join(import.meta.dirname, 'pages/webpage.ts'),
+                    js,
+                    resolver,
+                )
+                assert.ok(!parseResult.errors?.length)
+                assert.deepEqual(parseResult.workers, [
+                    {
+                        clientScript: 'pages/webpage.ts',
+                        ctor: 'Worker',
+                        entrypointIn: 'pages/w.ts',
+                        entrypointOut: '.lib/w/pages_w.esm.js',
+                        originalCtorSrc: './w.ts',
+                        placeholderCtorSrc: '/.lib/w/pages_w.esm.js',
+                        workerType: 'module',
+                    } satisfies WorkerCtorRegistration,
+                ])
+            })
+
+            test('resolves named module worker', async () => {
+                const resolver = Resolver.create(
+                    await defaultProjectDirs(import.meta.dirname),
+                )
+                const js = `new Worker('./w.ts', {name: 'W', type: 'module'})\nconsole.log('created a worker!')`
+                const parseResult = parseWorkerCtors(
+                    join(import.meta.dirname, 'pages/webpage.ts'),
+                    js,
+                    resolver,
+                )
+                assert.ok(!parseResult.errors?.length)
+                assert.deepEqual(parseResult.workers, [
+                    {
+                        clientScript: 'pages/webpage.ts',
+                        ctor: 'Worker',
+                        entrypointIn: 'pages/w.ts',
+                        entrypointOut: '.lib/w/pages_w.esm.js',
+                        originalCtorSrc: './w.ts',
+                        placeholderCtorSrc: '/.lib/w/pages_w.esm.js',
+                        workerType: 'module',
+                    } satisfies WorkerCtorRegistration,
+                ])
+            })
+        })
+        suite('workerOutPathOf', () => {
+            test('resolves module and classic out paths', () => {
+                assert.equal(
+                    '.lib/w/pages_settings_sync.esm.js',
+                    workerOutPathOf('pages/settings/sync.ts', 'module'),
+                )
+                assert.equal(
+                    '.lib/w/pages_settings_sync.classic.js',
+                    workerOutPathOf('pages/settings/sync.ts', 'classic'),
                 )
             })
         })

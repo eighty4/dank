@@ -172,12 +172,11 @@ suite('`dank build`', () => {
                 assert.ok(
                     await readTest(
                         project.path('build/dist/index.html'),
-                        /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
-                        /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
+                        /<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">[\s\S]*<link rel="stylesheet" href="\/dank-[A-Z\d]{8}\.css">/,
                     ),
                     `css links not found in ${project.path('build/dist/index.html')}`,
                 )
-                await project.assertDistExists('dank.page.css')
+                await project.assertDistExists('dank.css')
                 await project.assertDistExists('dank.css')
             })
         })

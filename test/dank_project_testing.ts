@@ -278,7 +278,7 @@ class DankTestProject {
         const dir = this.path('build/dist', dirname(entrypoint))
         const files: Array<string> = await readdir(dir)
         const regex = new RegExp(
-            `${filename.substring(0, filename.indexOf('.'))}-[A-Z\\d]{8}\\.${ext}$`,
+            `${filename.substring(0, filename.lastIndexOf('.'))}-[A-Z\\d]{8}\\.${ext}$`,
         )
         const matches = files.filter(p => regex.test(p))
         switch (matches.length) {
